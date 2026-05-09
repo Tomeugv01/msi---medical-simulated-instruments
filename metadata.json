@@ -1,0 +1,5 @@
+{
+  "name": "MSI - Medical Simulated Instruments",
+  "description": "A high-fidelity clinical simulation and telemetry monitoring application for medical professionals.",
+  "requestFramePermissions": ["microphone"]
+}

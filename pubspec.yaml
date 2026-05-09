@@ -1,0 +1,35 @@
+name: clinical_ether
+description: A high-fidelity clinical simulation and telemetry monitoring app.
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_fonts: ^6.1.0
+  provider: ^6.1.1
+  lucide_icons: ^0.257.0
+  pdf: ^3.10.8
+  printing: ^5.11.1
+  flutter_reactive_ble: ^5.3.1
+  permission_handler: ^11.3.1
+  shared_preferences: ^2.2.2
+  audioplayers: ^6.0.0
+  path_provider: ^2.1.2
+  audio_session: ^0.1.21
+  just_audio: ^0.9.37
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/logo.png
+    - assets/audio.mp3
+    - assets/audio2.mp3
