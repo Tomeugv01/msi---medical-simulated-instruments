@@ -6,5 +6,6 @@
   "scripts": {
     "dev": "echo 'Serving Flutter project files'",
     "build": "echo 'Building Flutter project'"
-  }
+  },
+  "dependencies": {}
 }

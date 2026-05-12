@@ -16,9 +16,7 @@ class ReportsScreen extends StatelessWidget {
     final pdf = pw.Document();
     pdf.addPage(
       pw.MultiPage(
-        header: (pw.Context context) => pw.Text(
-            'INFORME CLÍNICO - MSI PROTOCOL',
-            style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
+        header: (pw.Context context) => pw.Text('INFORME CLÍNICO - MSI PROTOCOL', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 16)),
         build: (pw.Context context) => [
           pw.SizedBox(height: 20),
           pw.Text('Sesión: ${DateTime.now()}'),
@@ -27,16 +25,15 @@ class ReportsScreen extends StatelessWidget {
           pw.Divider(),
           pw.SizedBox(height: 20),
           ...state.logs.map((log) => pw.Padding(
-              padding: const pw.EdgeInsets.only(bottom: 10),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text('${log['time']} - ${log['title']}',
-                      style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
-                  pw.Text(log['desc']!,
-                      style: const pw.TextStyle(fontSize: 10)),
-                ],
-              )))
+            padding: const pw.EdgeInsets.only(bottom: 10),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('${log['time']} - ${log['title']}', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                pw.Text(log['desc']!, style: const pw.TextStyle(fontSize: 10)),
+              ],
+            )
+          ))
         ],
       ),
     );
@@ -57,12 +54,8 @@ class ReportsScreen extends StatelessWidget {
             child: ElevatedButton.icon(
               onPressed: () => _exportPdf(context, state),
               icon: const Icon(LucideIcons.fileText),
-              label: Text('Exportar PDF',
-                  style: GoogleFonts.manrope(fontWeight: FontWeight.w800)),
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: msiTheme.primary,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size(double.infinity, 50)),
+              label: Text('Exportar PDF', style: GoogleFonts.manrope(fontWeight: FontWeight.w800)),
+              style: ElevatedButton.styleFrom(backgroundColor: msiTheme.primary, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50)),
             ),
           ),
         Expanded(
@@ -74,31 +67,19 @@ class ReportsScreen extends StatelessWidget {
               return Container(
                 margin: const EdgeInsets.only(bottom: 12),
                 padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                    color: msiTheme.card,
-                    borderRadius: BorderRadius.circular(16)),
+                decoration: BoxDecoration(color: msiTheme.card, borderRadius: BorderRadius.circular(16)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(log['title']!,
-                            style: GoogleFonts.manrope(
-                                fontWeight: FontWeight.w900,
-                                color: msiTheme.primary,
-                                fontSize: 13,
-                                letterSpacing: -0.2)),
-                        Text(log['time']!,
-                            style: const TextStyle(
-                                fontSize: 10, color: Colors.grey)),
+                        Text(log['title']!, style: GoogleFonts.manrope(fontWeight: FontWeight.w900, color: msiTheme.primary, fontSize: 13, letterSpacing: -0.2)),
+                        Text(log['time']!, style: const TextStyle(fontSize: 10, color: Colors.grey)),
                       ],
                     ),
                     const SizedBox(height: 4),
-                    Text(log['desc']!,
-                        style: TextStyle(
-                            fontSize: 12,
-                            color: msiTheme.text.withOpacity(0.7))),
+                    Text(log['desc']!, style: TextStyle(fontSize: 12, color: msiTheme.text.withOpacity(0.7))),
                   ],
                 ),
               );

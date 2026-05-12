@@ -5,7 +5,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:lucide_icons/lucide_icons.dart';
-import 'package:audioplayers/audioplayers.dart' as ap;
+import 'package:audioplayers/audioplayers.dart';
 import 'package:audio_session/audio_session.dart';
 import '../models/instrumental_models.dart';
 import '../services/audio_service.dart';
@@ -83,6 +83,7 @@ class SimulationState extends ChangeNotifier {
     Instrument(title: 'Glucómetro', icon: LucideIcons.droplets),
     Instrument(title: 'Frecuencia Cardíaca', icon: LucideIcons.heartPulse),
     Instrument(title: 'Oxígeno y Gases', icon: LucideIcons.wind),
+    Instrument(title: 'Respiración', icon: LucideIcons.activity),
     Instrument(title: 'Tensión Arterial', icon: LucideIcons.gauge),
     Instrument(title: 'Voz', icon: LucideIcons.mic),
     Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
@@ -174,22 +175,23 @@ class SimulationState extends ChangeNotifier {
 
   SimulationState() {
     _loadSettings();
-    // ✅ CORREGIDO: Ya no añadimos listener redundante
-    // El PannedAudioService ya notifica internamente sus cambios
-    // Solo nos suscribimos a los eventos del servicio cuando sea necesario
+    // Connect to audio service changes
+    _audioService.addListener(notifyListeners);
   }
 
   bool get isHeadsetConnected => _audioService.isHeadsetConnected;
-  bool get isMicActive => _audioService.isMicActive;
+  bool get isPTTActive => _audioService.isPTTActive;
+
+  Future<void> startPTT() async {
+    await _audioService.startPTT();
+  }
+
+  Future<void> stopPTT() async {
+    await _audioService.stopPTT();
+  }
 
   Future<void> playLeft() async {
     await _audioService.playLeftOnly('audio.mp3');
-  }
-
-  Future<void> toggleMicL() async {
-    await _audioService.toggleMicL();
-    // Forzar notificación después del cambio de estado del micrófono
-    notifyListeners();
   }
 
   Future<void> playRight() async {
@@ -324,6 +326,7 @@ class SimulationState extends ChangeNotifier {
           Instrument(
               title: 'Frecuencia Cardíaca', icon: LucideIcons.heartPulse),
           Instrument(title: 'Oxígeno y Gases', icon: LucideIcons.wind),
+          Instrument(title: 'Respiración', icon: LucideIcons.activity),
           Instrument(title: 'Tensión Arterial', icon: LucideIcons.gauge),
           Instrument(title: 'Voz', icon: LucideIcons.mic),
           Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
@@ -334,6 +337,7 @@ class SimulationState extends ChangeNotifier {
           if (title == 'Pulsioxímetro') continue; // Clean legacy entry
           if (title == 'Módulo de Sonido') continue; // Direct split migration
           final isEnabled = item['isEnabled'] ?? true;
+          final isManual = item['isManualTransmission'] ?? false;
           final colorVal = item['textColor'];
           final Color? textColor = colorVal != null ? Color(colorVal) : null;
           final original = defaultInstruments.firstWhere(
@@ -341,10 +345,12 @@ class SimulationState extends ChangeNotifier {
               orElse: () =>
                   Instrument(title: title, icon: LucideIcons.helpCircle));
           loaded.add(Instrument(
-              title: title,
-              icon: original.icon,
-              isEnabled: isEnabled,
-              textColor: textColor));
+            title: title,
+            icon: original.icon,
+            isEnabled: isEnabled,
+            textColor: textColor,
+            isManualTransmission: isManual,
+          ));
         }
 
         for (var d in defaultInstruments) {
@@ -407,6 +413,7 @@ class SimulationState extends ChangeNotifier {
                 'title': i.title,
                 'isEnabled': i.isEnabled,
                 'textColor': i.textColor?.value,
+                'isManualTransmission': i.isManualTransmission,
               })
           .toList();
       await prefs.setString('instruments', jsonEncode(instrumentsData));
@@ -661,6 +668,7 @@ class SimulationState extends ChangeNotifier {
       Instrument(title: 'Glucómetro', icon: LucideIcons.droplets),
       Instrument(title: 'Frecuencia Cardíaca', icon: LucideIcons.heartPulse),
       Instrument(title: 'Oxígeno y Gases', icon: LucideIcons.wind),
+      Instrument(title: 'Respiración', icon: LucideIcons.activity),
       Instrument(title: 'Tensión Arterial', icon: LucideIcons.gauge),
       Instrument(title: 'Voz', icon: LucideIcons.mic),
       Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
@@ -699,7 +707,6 @@ class SimulationState extends ChangeNotifier {
           'Oxígeno y Gases',
           'Termómetro',
           'Tensión Arterial',
-          'Voz',
           'Estetoscopio'
         ],
         isClinical: true,
@@ -938,7 +945,7 @@ class SimulationState extends ChangeNotifier {
 
   @override
   void dispose() {
-    // ✅ Ya no es necesario remover un listener que no agregamos
+    _audioService.removeListener(notifyListeners);
     _audioService.dispose();
     _scanStream?.cancel();
     _connectionStream?.cancel();

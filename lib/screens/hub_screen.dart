@@ -624,6 +624,72 @@ class HubCell extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (instrument.isManualTransmission &&
+                          instrument.hasPendingSync)
+                        GestureDetector(
+                          onTap: () => state.syncInstrument(title),
+                          child: Container(
+                            margin: EdgeInsets.only(right: 8 * scale),
+                            padding: EdgeInsets.symmetric(
+                                horizontal: 10 * scale, vertical: 6 * scale),
+                            decoration: BoxDecoration(
+                              color: Colors.red,
+                              borderRadius: BorderRadius.circular(12 * scale),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.red.withOpacity(0.3),
+                                  blurRadius: 8 * scale,
+                                  offset: Offset(0, 2 * scale),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(LucideIcons.send,
+                                    color: Colors.white, size: 12 * scale),
+                                if (scale > 0.6) ...[
+                                  SizedBox(width: 4 * scale),
+                                  Text(
+                                    'SYNC',
+                                    style: GoogleFonts.manrope(
+                                      fontSize: 8 * scale,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
+                      GestureDetector(
+                        onTap: () => state.toggleTransmissionMode(title),
+                        child: Container(
+                          padding: EdgeInsets.all(8 * scale),
+                          decoration: BoxDecoration(
+                            color: instrument.isManualTransmission
+                                ? Colors.orange.withOpacity(0.1)
+                                : Colors.green.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            instrument.isManualTransmission
+                                ? LucideIcons.hand
+                                : LucideIcons.zap,
+                            size: 14 * scale,
+                            color: instrument.isManualTransmission
+                                ? Colors.orange
+                                : Colors.green,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(width: 8 * scale),
                   Icon(
                     isCollapsed
                         ? LucideIcons.chevronDown
@@ -820,6 +886,51 @@ class _MiniAdjustBtn extends StatelessWidget {
             color: theme.accent.withOpacity(0.5),
             borderRadius: BorderRadius.circular(12 * scale)),
         child: Icon(icon, size: 22 * scale, color: theme.primary),
+      ),
+    );
+  }
+}
+
+class _TransmitBtn extends StatelessWidget {
+  final double scale;
+  final VoidCallback onTap;
+  const _TransmitBtn({required this.scale, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<SimulationState>().theme;
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(vertical: 12 * scale),
+        decoration: BoxDecoration(
+          color: theme.primary,
+          borderRadius: BorderRadius.circular(16 * scale),
+          boxShadow: [
+            BoxShadow(
+              color: theme.primary.withOpacity(0.3),
+              blurRadius: 10 * scale,
+              offset: Offset(0, 4 * scale),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(LucideIcons.send, color: Colors.white, size: 14 * scale),
+            SizedBox(width: 8 * scale),
+            Text(
+              'TRANSMITIR CAMBIOS',
+              style: GoogleFonts.manrope(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 10 * scale,
+                letterSpacing: 1,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1080,13 +1191,7 @@ class _VoiceModuleCell extends StatelessWidget {
                     ),
                     SizedBox(width: 8 * scale),
                     Expanded(
-                      child: _SoundBtn(
-                        label: 'MICRÓFONO',
-                        icon: LucideIcons.mic,
-                        scale: scale,
-                        onTap: () => state.toggleMicL(),
-                        isMicActive: state.isMicActive,
-                      ),
+                      child: _PTTBtn(scale: scale),
                     ),
                   ],
                 ),
@@ -1221,14 +1326,12 @@ class _SoundBtn extends StatelessWidget {
   final double scale;
   final VoidCallback onTap;
   final bool isStop;
-  final bool isMicActive;
   const _SoundBtn({
     required this.label,
     required this.icon,
     required this.scale,
     required this.onTap,
     this.isStop = false,
-    this.isMicActive = false,
   });
 
   @override
@@ -1242,10 +1345,6 @@ class _SoundBtn extends StatelessWidget {
       bgColor = Colors.red.withOpacity(0.1);
       borderColor = Colors.red.withOpacity(0.2);
       contentColor = Colors.red;
-    } else if (isMicActive) {
-      bgColor = Colors.green.withOpacity(0.1);
-      borderColor = Colors.green.withOpacity(0.3);
-      contentColor = Colors.green;
     }
 
     return GestureDetector(
@@ -1263,6 +1362,50 @@ class _SoundBtn extends StatelessWidget {
             Icon(icon, size: 18 * scale, color: contentColor),
             SizedBox(height: 4 * scale),
             Text(label,
+                style: GoogleFonts.manrope(
+                    fontSize: 8 * scale,
+                    fontWeight: FontWeight.w900,
+                    color: contentColor)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PTTBtn extends StatelessWidget {
+  final double scale;
+  const _PTTBtn({required this.scale});
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<SimulationState>();
+    final theme = state.theme;
+    final isActive = state.isPTTActive;
+
+    Color bgColor = isActive ? theme.primary.withOpacity(0.2) : theme.accent;
+    Color borderColor =
+        isActive ? theme.primary : theme.primary.withOpacity(0.1);
+    Color contentColor = theme.primary;
+
+    return GestureDetector(
+      onTapDown: (_) => state.startPTT(),
+      onTapUp: (_) => state.stopPTT(),
+      onTapCancel: () => state.stopPTT(),
+      child: Container(
+        padding:
+            EdgeInsets.symmetric(horizontal: 12 * scale, vertical: 10 * scale),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12 * scale),
+          border: Border.all(color: borderColor, width: isActive ? 2 : 1),
+        ),
+        child: Column(
+          children: [
+            Icon(isActive ? LucideIcons.mic : LucideIcons.micOff,
+                size: 18 * scale, color: contentColor),
+            SizedBox(height: 4 * scale),
+            Text('PTT VIVO',
                 style: GoogleFonts.manrope(
                     fontSize: 8 * scale,
                     fontWeight: FontWeight.w900,

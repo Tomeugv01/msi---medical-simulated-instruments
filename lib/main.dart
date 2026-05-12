@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
-import 'dart:io';
 import '../providers/simulation_provider.dart';
 import '../models/instrumental_models.dart';
 import './screens/setup_screen.dart';
@@ -14,30 +12,12 @@ import './widgets/msi_modals.dart';
 /// Main entry point for the MSI (Medical Simulated Instruments) Application.
 /// Initializes the [SimulationState] provider and sets up the global theme.
 void main() {
-  // Configurar el canal MethodChannel para el manejo de audio
-  WidgetsFlutterBinding.ensureInitialized();
-  _setupAudioMethodChannel();
-
   runApp(
     ChangeNotifierProvider(
       create: (_) => SimulationState(),
       child: const ClinicalEtherApp(),
     ),
   );
-}
-
-/// Configura el MethodChannel para forzar el uso del micrófono del teléfono
-void _setupAudioMethodChannel() {
-  if (Platform.isAndroid) {
-    const platform = MethodChannel('msi/audio');
-    platform.setMethodCallHandler((call) async {
-      if (call.method == 'setAudioMode') {
-        // El código nativo se ejecutará en MainActivity
-        return true;
-      }
-      return false;
-    });
-  }
 }
 
 class ClinicalEtherApp extends StatelessWidget {
@@ -78,9 +58,6 @@ class _MainAppShellState extends State<MainAppShell> {
   @override
   void initState() {
     super.initState();
-    // Configurar el modo de audio al iniciar
-    _configureAudioMode();
-
     // Simulate initial loading/initialization
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
@@ -91,19 +68,6 @@ class _MainAppShellState extends State<MainAppShell> {
     // Listen to simulation state changes
     final state = context.read<SimulationState>();
     state.addListener(_onStateChanged);
-  }
-
-  /// Configura el modo de comunicación para usar el micrófono del teléfono
-  Future<void> _configureAudioMode() async {
-    if (Platform.isAndroid) {
-      try {
-        const platform = MethodChannel('msi/audio');
-        await platform.invokeMethod('setAudioMode');
-        debugPrint("Audio mode configured to COMMUNICATION");
-      } catch (e) {
-        debugPrint("Error configuring audio mode: $e");
-      }
-    }
   }
 
   @override

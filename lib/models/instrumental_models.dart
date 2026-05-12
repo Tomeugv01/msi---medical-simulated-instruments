@@ -27,22 +27,19 @@ class Instrument {
 /// It can have [healthEffects] which automatically shift vitals over time.
 class ClinicalEvent {
   final String title;
-  final Map<String, double>
-      healthEffects; // Map of vitalKey -> changeAmount (e.g. {'hr': +10})
+  final Map<String, double> healthEffects; // Map of vitalKey -> changeAmount (e.g. {'hr': +10})
 
   ClinicalEvent({required this.title, this.healthEffects = const {}});
 
   Map<String, dynamic> toJson() => {
-        'title': title,
-        'healthEffects': healthEffects,
-      };
+    'title': title,
+    'healthEffects': healthEffects,
+  };
 
   factory ClinicalEvent.fromJson(Map<String, dynamic> json) {
     return ClinicalEvent(
       title: json['title'] ?? '',
-      healthEffects: (json['healthEffects'] as Map<String, dynamic>?)
-              ?.map((k, v) => MapEntry(k, (v as num).toDouble())) ??
-          {},
+      healthEffects: (json['healthEffects'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, (v as num).toDouble())) ?? {},
     );
   }
 }
@@ -66,21 +63,18 @@ class InstrumentalPreset {
     this.isClinical = false,
     List<ClinicalEvent>? allowedEvents,
     List<String>? allowedMeasurements,
-  })  : allowedEvents = allowedEvents ?? [],
-        allowedMeasurements = allowedMeasurements ?? [];
+  }) : allowedEvents = allowedEvents ?? [],
+       allowedMeasurements = allowedMeasurements ?? [];
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'title': title,
-        'iconKey': iconMap.entries
-            .firstWhere((e) => e.value == icon,
-                orElse: () => iconMap.entries.first)
-            .key,
-        'instrumentTitles': instrumentTitles,
-        'isClinical': isClinical,
-        'allowedEvents': allowedEvents.map((e) => e.toJson()).toList(),
-        'allowedMeasurements': allowedMeasurements,
-      };
+    'id': id,
+    'title': title,
+    'iconKey': iconMap.entries.firstWhere((e) => e.value == icon, orElse: () => iconMap.entries.first).key,
+    'instrumentTitles': instrumentTitles,
+    'isClinical': isClinical,
+    'allowedEvents': allowedEvents.map((e) => e.toJson()).toList(),
+    'allowedMeasurements': allowedMeasurements,
+  };
 
   factory InstrumentalPreset.fromJson(Map<String, dynamic> json) {
     return InstrumentalPreset(
@@ -90,10 +84,9 @@ class InstrumentalPreset {
       instrumentTitles: List<String>.from(json['instrumentTitles'] ?? []),
       isClinical: json['isClinical'] ?? false,
       allowedEvents: (json['allowedEvents'] as List?)?.map((e) {
-            if (e is String) return ClinicalEvent(title: e);
-            return ClinicalEvent.fromJson(e);
-          }).toList() ??
-          [],
+        if (e is String) return ClinicalEvent(title: e);
+        return ClinicalEvent.fromJson(e);
+      }).toList() ?? [],
       allowedMeasurements: List<String>.from(json['allowedMeasurements'] ?? []),
     );
   }
