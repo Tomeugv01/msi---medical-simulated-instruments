@@ -9,6 +9,7 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:audio_session/audio_session.dart';
 import '../models/instrumental_models.dart';
 import '../services/audio_service.dart';
+import '../services/telemetry_service.dart';
 
 /// [SimulationState] is the central data hub of the application.
 /// It manages vital signs, Bluetooth connectivity, persistent settings,
@@ -27,6 +28,9 @@ class SimulationState extends ChangeNotifier {
 
   // Audio Module Delegation
   final PannedAudioService _audioService = PannedAudioService();
+
+  // Telemetry Module (Peripheral Mode)
+  final TelemetryService _telemetryService = TelemetryService();
 
   // --- Core Vital Signs (Current Simulation) ---
   int _hr = 72; // Heart Rate (BPM)
@@ -617,7 +621,10 @@ class SimulationState extends ChangeNotifier {
 
     _vitalsTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
       _sendVitalsToDevice();
+      _broadcastToMonitor();
     });
+
+    _telemetryService.startBroadcasting();
 
     _logTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       _checkAndLogVitalsChanges();
@@ -657,6 +664,7 @@ class SimulationState extends ChangeNotifier {
     _timer?.cancel();
     _vitalsTimer?.cancel();
     _logTimer?.cancel();
+    _telemetryService.stopBroadcasting();
     _addLog("Simulación Finalizada", "Sesión finalizada por el operador.");
     notifyListeners();
   }
@@ -943,10 +951,91 @@ class SimulationState extends ChangeNotifier {
     }
   }
 
+  /// Converts current simulation state to a JSON format the MSI Monitor app expects.
+  void _broadcastToMonitor() {
+    if (!_isRunning) return;
+
+    final List<Map<String, dynamic>> payload = [];
+
+    // Helper to map current instruments to what the Monitor expects
+    for (var inst in enabledInstruments) {
+      if (inst.title == 'Frecuencia Cardíaca') {
+        payload.add({
+          "id": "hr_01",
+          "type": "hr",
+          "label": "Heart Rate",
+          "value": "$_hr",
+          "unit": "bpm",
+          "color": _hexFromColor(inst.textColor ?? const Color(0xFF22C55E)),
+        });
+      } else if (inst.title == 'Oxígeno y Gases') {
+        payload.add({
+          "id": "spo2_01",
+          "type": "spo2",
+          "label": "SpO2",
+          "value": "$_spo2",
+          "unit": "%",
+          "color": _hexFromColor(inst.textColor ?? const Color(0xFF3B82F6)),
+        });
+        payload.add({
+          "id": "co2_01",
+          "type": "co2",
+          "label": "EtCO2",
+          "value": "$_co2",
+          "unit": "mmHg",
+          "color": _hexFromColor(inst.textColor ?? const Color(0xFFEAB308)),
+        });
+      } else if (inst.title == 'Respiración') {
+        payload.add({
+          "id": "resp_01",
+          "type": "resp",
+          "label": "Respiratory",
+          "value": "$_resp",
+          "unit": "rpm",
+          "color": _hexFromColor(inst.textColor ?? const Color(0xFFA855F7)),
+        });
+      } else if (inst.title == 'Tensión Arterial') {
+        payload.add({
+          "id": "bp_01",
+          "type": "bp",
+          "label": "Blood Pressure",
+          "value": "$_sys/$_dia",
+          "unit": "mmHg",
+          "color": _hexFromColor(inst.textColor ?? const Color(0xFFEF4444)),
+        });
+      } else if (inst.title == 'Termómetro') {
+        payload.add({
+          "id": "temp_01",
+          "type": "temp",
+          "label": "Temperature",
+          "value": _temp.toStringAsFixed(1),
+          "unit": "°C",
+          "color": _hexFromColor(inst.textColor ?? const Color(0xFF06B6D4)),
+        });
+      } else if (inst.title == 'Glucómetro') {
+        payload.add({
+          "id": "glu_01",
+          "type": "glu",
+          "label": "Glucose",
+          "value": "$_glucose",
+          "unit": "mg/dL",
+          "color": _hexFromColor(inst.textColor ?? const Color(0xFFF97316)),
+        });
+      }
+    }
+
+    _telemetryService.updateMonitor(payload);
+  }
+
+  String _hexFromColor(Color color) {
+    return '#${color.value.toRadixString(16).substring(2).toUpperCase()}';
+  }
+
   @override
   void dispose() {
     _audioService.removeListener(notifyListeners);
     _audioService.dispose();
+    _telemetryService.stopBroadcasting();
     _scanStream?.cancel();
     _connectionStream?.cancel();
     _timer?.cancel();

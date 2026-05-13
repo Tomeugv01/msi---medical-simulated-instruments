@@ -15,6 +15,7 @@ dependencies:
   printing: ^5.11.1
   flutter_reactive_ble: ^5.3.1
   permission_handler: ^11.3.1
+  flutter_ble_peripheral: ^2.1.0
   shared_preferences: ^2.2.2
   audioplayers: ^5.2.1
   audio_session: ^0.1.25

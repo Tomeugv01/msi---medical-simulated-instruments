@@ -10,6 +10,7 @@
         "audio_session",
         "audioplayers",
         "flutter",
+        "flutter_ble_peripheral",
         "flutter_reactive_ble",
         "flutter_sound",
         "google_fonts",
@@ -113,6 +114,14 @@
         "shared_preferences_platform_interface",
         "shared_preferences_web",
         "shared_preferences_windows"
+      ]
+    },
+    {
+      "name": "flutter_ble_peripheral",
+      "version": "2.1.0",
+      "dependencies": [
+        "flutter",
+        "json_annotation"
       ]
     },
     {
@@ -493,6 +502,13 @@
       "dependencies": [
         "flutter",
         "shared_preferences_platform_interface"
+      ]
+    },
+    {
+      "name": "json_annotation",
+      "version": "4.11.0",
+      "dependencies": [
+        "meta"
       ]
     },
     {
