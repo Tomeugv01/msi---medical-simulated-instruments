@@ -593,8 +593,17 @@ class SimulationState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void startSimulation() {
+  void startSimulation() async {
     if (_isRunning) return;
+
+    // Request Peripheral and Scanning Permissions
+    await [
+      Permission.bluetoothAdvertise,
+      Permission.bluetoothConnect,
+      Permission.bluetoothScan,
+      Permission.location,
+    ].request();
+
     _isRunning = true;
     _elapsed = Duration.zero;
     _logs.clear();
@@ -624,7 +633,7 @@ class SimulationState extends ChangeNotifier {
       _broadcastToMonitor();
     });
 
-    _telemetryService.startBroadcasting();
+    _telemetryService.startSearch();
 
     _logTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       _checkAndLogVitalsChanges();
@@ -664,7 +673,7 @@ class SimulationState extends ChangeNotifier {
     _timer?.cancel();
     _vitalsTimer?.cancel();
     _logTimer?.cancel();
-    _telemetryService.stopBroadcasting();
+    _telemetryService.stop();
     _addLog("Simulación Finalizada", "Sesión finalizada por el operador.");
     notifyListeners();
   }
@@ -1035,7 +1044,7 @@ class SimulationState extends ChangeNotifier {
   void dispose() {
     _audioService.removeListener(notifyListeners);
     _audioService.dispose();
-    _telemetryService.stopBroadcasting();
+    _telemetryService.stop();
     _scanStream?.cancel();
     _connectionStream?.cancel();
     _timer?.cancel();

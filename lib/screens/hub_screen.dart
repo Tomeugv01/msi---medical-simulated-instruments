@@ -4,6 +4,7 @@ import 'package:lucide_icons/lucide_icons.dart';
 import 'package:provider/provider.dart';
 import '../providers/simulation_provider.dart';
 import '../models/instrumental_models.dart';
+import '../services/telemetry_service.dart';
 
 /// [HubScreen] is the main operational view where the user monitors the simulation.
 /// It displays enabled instruments in a grid/wrap layout.
@@ -78,12 +79,19 @@ class HubScreen extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('PANEL EN VIVO',
-                  style: GoogleFonts.manrope(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w900,
-                      color: msiTheme.text.withOpacity(0.4),
-                      letterSpacing: 1.5)),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('PANEL EN VIVO',
+                      style: GoogleFonts.manrope(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900,
+                          color: msiTheme.text.withOpacity(0.4),
+                          letterSpacing: 1.5)),
+                  const SizedBox(height: 4),
+                  _TelemetryStatusBadge(),
+                ],
+              ),
               Row(
                 children: [
                   _ColumnSelector(current: state.hubColumns),
@@ -272,6 +280,202 @@ class HubScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _TelemetryStatusBadge extends StatelessWidget {
+  void _showMonitorSelector(BuildContext context) {
+    final telemetry = TelemetryService();
+    final theme = context.read<SimulationState>().theme;
+
+    if (!telemetry.isConnected && !telemetry.isSearching) {
+      telemetry.startSearch();
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+        decoration: BoxDecoration(
+          color: theme.background,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(32),
+            topRight: Radius.circular(32),
+          ),
+        ),
+        child: ListenableBuilder(
+          listenable: telemetry,
+          builder: (context, _) {
+            final devices = telemetry.discoveredDevices;
+
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'SELECCIONAR MONITOR',
+                      style: GoogleFonts.manrope(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: theme.text,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                    if (telemetry.isSearching)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    else
+                      IconButton(
+                        onPressed: () => telemetry.startSearch(),
+                        icon: const Icon(LucideIcons.refreshCw, size: 18),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                if (devices.isEmpty && !telemetry.isSearching)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32),
+                    child: Text('No se encontraron monitores cercanos.'),
+                  )
+                else
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: devices.length,
+                      itemBuilder: (context, index) {
+                        final device = devices[index];
+                        final isThisOne =
+                            telemetry.connectedDeviceId == device.id;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: theme.card,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: isThisOne
+                                  ? theme.primary
+                                  : theme.text.withOpacity(0.05),
+                              width: isThisOne ? 2 : 1,
+                            ),
+                          ),
+                          child: ListTile(
+                            onTap: () {
+                              telemetry.connectToMonitor(device.id);
+                              Navigator.pop(context);
+                            },
+                            leading: Icon(
+                              LucideIcons.monitor,
+                              color: isThisOne
+                                  ? theme.primary
+                                  : theme.text.withOpacity(0.3),
+                            ),
+                            title: Text(
+                              device.name.isEmpty
+                                  ? 'Monitor Desconocido'
+                                  : device.name,
+                              style: GoogleFonts.manrope(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                                color: theme.text,
+                              ),
+                            ),
+                            subtitle: Text(
+                              device.id,
+                              style: GoogleFonts.manrope(
+                                fontSize: 10,
+                                color: theme.text.withOpacity(0.4),
+                              ),
+                            ),
+                            trailing: isThisOne
+                                ? const Icon(LucideIcons.checkCircle2,
+                                    color: Colors.green)
+                                : const Icon(LucideIcons.chevronRight,
+                                    size: 16),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                const SizedBox(height: 24),
+                if (telemetry.isConnected)
+                  TextButton.icon(
+                    onPressed: () {
+                      telemetry.stop();
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(LucideIcons.unplug,
+                        size: 16, color: Colors.red),
+                    label: const Text('DESCONECTAR',
+                        style: TextStyle(
+                            color: Colors.red, fontWeight: FontWeight.w900)),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final telemetry = TelemetryService();
+    return ListenableBuilder(
+      listenable: telemetry,
+      builder: (context, _) {
+        final isConnected = telemetry.isConnected;
+        final isSearching = telemetry.isSearching;
+
+        Color color = Colors.grey;
+        String text = 'SIN MONITOR';
+        IconData icon = LucideIcons.unplug;
+
+        if (isConnected) {
+          color = Colors.green;
+          text = 'MONITOR VIVO';
+          icon = LucideIcons.radio;
+        } else if (isSearching) {
+          color = Colors.blue;
+          text = 'BUSCANDO...';
+          icon = LucideIcons.search;
+        }
+
+        return GestureDetector(
+          onTap: () => _showMonitorSelector(context),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: color.withOpacity(0.3)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 10, color: color),
+                const SizedBox(width: 4),
+                Text(
+                  text,
+                  style: GoogleFonts.manrope(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    color: color,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }
