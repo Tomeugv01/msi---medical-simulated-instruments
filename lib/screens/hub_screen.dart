@@ -12,15 +12,6 @@ class HubScreen extends StatelessWidget {
   final VoidCallback? onFinished;
   const HubScreen({super.key, this.onFinished});
 
-  void _showStats(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => const StatsOverlay(),
-    );
-  }
-
   void _confirmStop(BuildContext context, SimulationState state) {
     showDialog(
       context: context,
@@ -95,14 +86,6 @@ class HubScreen extends StatelessWidget {
               Row(
                 children: [
                   _ColumnSelector(current: state.hubColumns),
-                  const SizedBox(width: 8),
-                  TextButton.icon(
-                    onPressed: () => _showStats(context),
-                    icon: const Icon(LucideIcons.activity, size: 16),
-                    label: const Text('Ondas',
-                        style: TextStyle(
-                            fontSize: 12, fontWeight: FontWeight.bold)),
-                  ),
                 ],
               ),
             ],
@@ -203,81 +186,141 @@ class HubScreen extends StatelessWidget {
   void _showSubActions(BuildContext context, SimulationState state,
       String category, List<dynamic> items) {
     final msiTheme = state.theme;
+    final isChecklist = category == 'Medición';
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
-        padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
-        decoration: BoxDecoration(
-          color: msiTheme.background,
-          borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(32), topRight: Radius.circular(32)),
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: const Icon(LucideIcons.arrowLeft)),
-                const SizedBox(width: 8),
-                Text(category.toUpperCase(),
-                    style: GoogleFonts.manrope(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w900,
-                        color: msiTheme.primary)),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Expanded(
-              child: ListView.builder(
-                itemCount: items.length,
-                itemBuilder: (context, index) {
-                  final item = items[index];
-                  final String title =
-                      item is ClinicalEvent ? item.title : item.toString();
-
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: msiTheme.card,
-                      borderRadius: BorderRadius.circular(20),
-                      border:
-                          Border.all(color: msiTheme.text.withOpacity(0.05)),
-                    ),
-                    child: ListTile(
-                      onTap: () {
-                        if (item is ClinicalEvent) {
-                          state.recordEvent(item);
-                        } else {
-                          state.recordAction(category, item.toString());
-                        }
-                        Navigator.pop(context);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('$title registrado con éxito'),
-                            duration: const Duration(seconds: 2),
-                            behavior: SnackBarBehavior.floating,
-                            backgroundColor: msiTheme.primary,
-                          ),
-                        );
-                      },
-                      leading: Icon(LucideIcons.checkCircle2,
-                          color: msiTheme.primary, size: 20),
-                      title: Text(title,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setInternalState) => Container(
+          height: MediaQuery.of(context).size.height * 0.7,
+          padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
+          decoration: BoxDecoration(
+            color: msiTheme.background,
+            borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(32), topRight: Radius.circular(32)),
+          ),
+          child: Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      IconButton(
+                          onPressed: () => Navigator.pop(context),
+                          icon: const Icon(LucideIcons.arrowLeft)),
+                      const SizedBox(width: 8),
+                      Text(category.toUpperCase(),
                           style: GoogleFonts.manrope(
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
-                              color: msiTheme.text)),
-                      trailing: const Icon(LucideIcons.chevronRight, size: 16),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: msiTheme.primary)),
+                    ],
+                  ),
+                  if (isChecklist)
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('LISTO'),
                     ),
-                  );
-                },
+                ],
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final String title =
+                        item is ClinicalEvent ? item.title : item.toString();
+
+                    if (isChecklist) {
+                      final bool isDone =
+                          state.isMeasurementCompleted(item.toString());
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: msiTheme.card,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: isDone
+                                  ? msiTheme.primary.withOpacity(0.3)
+                                  : msiTheme.text.withOpacity(0.05)),
+                        ),
+                        child: CheckboxListTile(
+                          value: isDone,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 4),
+                          onChanged: (val) {
+                            state.toggleMeasurement(item.toString());
+                            setInternalState(() {});
+                          },
+                          activeColor: msiTheme.primary,
+                          checkColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20)),
+                          title: Text(title,
+                              style: GoogleFonts.manrope(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: isDone
+                                      ? msiTheme.primary
+                                      : msiTheme.text)),
+                          secondary: Icon(
+                            isDone
+                                ? LucideIcons.checkCircle2
+                                : LucideIcons.circle,
+                            color: isDone
+                                ? msiTheme.primary
+                                : msiTheme.text.withOpacity(0.2),
+                            size: 20,
+                          ),
+                        ),
+                      );
+                    }
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: msiTheme.card,
+                        borderRadius: BorderRadius.circular(20),
+                        border:
+                            Border.all(color: msiTheme.text.withOpacity(0.05)),
+                      ),
+                      child: ListTile(
+                        onTap: () {
+                          if (item is ClinicalEvent) {
+                            state.recordEvent(item);
+                          } else {
+                            state.recordAction(category, item.toString());
+                          }
+                          Navigator.pop(context);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('$title registrado con éxito'),
+                              duration: const Duration(seconds: 2),
+                              behavior: SnackBarBehavior.floating,
+                              backgroundColor: msiTheme.primary,
+                            ),
+                          );
+                        },
+                        leading: Icon(LucideIcons.checkCircle2,
+                            color: msiTheme.primary, size: 20),
+                        title: Text(title,
+                            style: GoogleFonts.manrope(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                                color: msiTheme.text)),
+                        trailing:
+                            const Icon(LucideIcons.chevronRight, size: 16),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -546,7 +589,7 @@ class HubCell extends StatelessWidget {
       _showBPManualInput(context, state);
       return;
     }
-    if (title == 'Oxígeno y Gases') {
+    if (title == 'Sat% y FR') {
       _showGasesManualInput(context, state);
       return;
     }
@@ -590,7 +633,7 @@ class HubCell extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: msiTheme.background,
-        title: Text('Ajustar Oxígeno y Gases',
+        title: Text('Ajustar Sat% y FR',
             style: GoogleFonts.manrope(
                 fontWeight: FontWeight.w900, color: msiTheme.primary)),
         content: Column(
@@ -601,7 +644,7 @@ class HubCell extends StatelessWidget {
               keyboardType: TextInputType.number,
               autofocus: true,
               decoration: InputDecoration(
-                labelText: 'SpO2 (%)',
+                labelText: 'Sat% (%)',
                 labelStyle: GoogleFonts.manrope(
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
@@ -618,7 +661,7 @@ class HubCell extends StatelessWidget {
               controller: co2Controller,
               keyboardType: TextInputType.number,
               decoration: InputDecoration(
-                labelText: 'CO2 (mmHg)',
+                labelText: 'FR (rpm)',
                 labelStyle: GoogleFonts.manrope(
                     fontSize: 10,
                     fontWeight: FontWeight.w900,
@@ -750,14 +793,10 @@ class HubCell extends StatelessWidget {
       val = '${state.hr}';
       unit = 'BPM';
       vitalKey = 'hr';
-    } else if (title == 'Oxígeno y Gases') {
+    } else if (title == 'Sat% y FR') {
       val = '${state.spo2}%';
-      unit = 'O2/CO2';
+      unit = 'Sat/FR';
       vitalKey = 'spo2';
-    } else if (title == 'Respiración') {
-      val = '${state.resp}';
-      unit = '/min';
-      vitalKey = 'resp';
     } else if (title == 'Temperatura' || title == 'Termómetro') {
       val = '${state.temp.toStringAsFixed(1)}°C';
       unit = 'TEMP';
@@ -937,9 +976,9 @@ class HubCell extends StatelessWidget {
                               height: 1.1,
                             ),
                           ),
-                          if (title == 'Oxígeno y Gases')
+                          if (title == 'Sat% y FR')
                             Text(
-                              '${state.co2} CO2',
+                              '${state.co2} FR',
                               style: GoogleFonts.manrope(
                                 fontSize: 24 * scale,
                                 fontWeight: FontWeight.w800,
@@ -953,11 +992,11 @@ class HubCell extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: 16 * scale),
-                  if (title == 'Oxígeno y Gases')
+                  if (title == 'Sat% y FR')
                     Column(
                       children: [
                         _AdjustRow(
-                            label: 'O2',
+                            label: 'Sat',
                             value: state.spo2,
                             scale: scale,
                             onPlus: () =>
@@ -966,7 +1005,7 @@ class HubCell extends StatelessWidget {
                                 state.setVital('spo2', state.spo2 - 1)),
                         SizedBox(height: 12 * scale),
                         _AdjustRow(
-                            label: 'CO2',
+                            label: 'FR',
                             value: state.co2,
                             scale: scale,
                             onPlus: () => state.setVital('co2', state.co2 + 1),
@@ -1007,9 +1046,7 @@ class HubCell extends StatelessWidget {
                                         ? state.temp
                                         : (vitalKey == 'hr'
                                             ? state.hr
-                                            : (vitalKey == 'resp'
-                                                ? state.resp
-                                                : state.glucose))) -
+                                            : state.glucose)) -
                                     step)),
                         SizedBox(width: 32 * scale),
                         _MiniAdjustBtn(
@@ -1021,9 +1058,7 @@ class HubCell extends StatelessWidget {
                                         ? state.temp
                                         : (vitalKey == 'hr'
                                             ? state.hr
-                                            : (vitalKey == 'resp'
-                                                ? state.resp
-                                                : state.glucose))) +
+                                            : state.glucose)) +
                                     step)),
                       ],
                     ),
@@ -1140,6 +1175,57 @@ class _TransmitBtn extends StatelessWidget {
   }
 }
 
+void _showVolumeMenu(BuildContext context, SimulationState state, bool isLeft) {
+  final theme = state.theme;
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (context) => Container(
+      padding: const EdgeInsets.all(32),
+      decoration: BoxDecoration(
+        color: theme.background,
+        borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(32), topRight: Radius.circular(32)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+              isLeft
+                  ? 'Volumen Canal Izquierdo (Voz)'
+                  : 'Volumen Canal Derecho (Estetoscopio)',
+              style: GoogleFonts.manrope(
+                  fontWeight: FontWeight.w900, fontSize: 16)),
+          const SizedBox(height: 24),
+          ListenableBuilder(
+            listenable: state,
+            builder: (context, _) {
+              double currentVol = isLeft ? state.leftVolume : state.rightVolume;
+              return Column(
+                children: [
+                  Slider(
+                    value: currentVol,
+                    activeColor: theme.primary,
+                    onChanged: (val) => isLeft
+                        ? state.setLeftVolume(val)
+                        : state.setRightVolume(val),
+                  ),
+                  Text('${(currentVol * 100).round()}%',
+                      style: GoogleFonts.manrope(
+                          fontWeight: FontWeight.w900,
+                          fontSize: 24,
+                          color: theme.primary)),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    ),
+  );
+}
+
 class _ColumnSelector extends StatelessWidget {
   final int current;
   const _ColumnSelector({required this.current});
@@ -1182,137 +1268,6 @@ class _ColumnSelector extends StatelessWidget {
   }
 }
 
-class StatsOverlay extends StatelessWidget {
-  const StatsOverlay({super.key});
-  @override
-  Widget build(BuildContext context) {
-    final state = context.watch<SimulationState>();
-    final msiTheme = state.theme;
-    final activeStats = state.enabledInstruments
-        .where((i) => i.title != 'Voz' && i.title != 'Estetoscopio')
-        .toList();
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      decoration: BoxDecoration(
-          color: msiTheme.background,
-          borderRadius: const BorderRadius.only(
-              topLeft: Radius.circular(32), topRight: Radius.circular(32))),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-                color: msiTheme.card,
-                borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(32),
-                    topRight: Radius.circular(32))),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  'Ondas de Telemetría',
-                  style: GoogleFonts.manrope(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                    color: msiTheme.primary,
-                  ),
-                ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: Icon(LucideIcons.x, color: msiTheme.text),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: activeStats.isEmpty
-                ? const Center(child: Text('Sin datos'))
-                : ListView.builder(
-                    padding: const EdgeInsets.all(24),
-                    itemCount: activeStats.length,
-                    itemBuilder: (c, i) {
-                      final inst = activeStats[i];
-                      String val = '--';
-                      Color color = Colors.green;
-
-                      if (inst.title == 'Frecuencia Cardíaca') {
-                        val = '${state.hr}';
-                        color = Colors.redAccent;
-                      } else if (inst.title == 'Oxígeno y Gases') {
-                        val = '${state.spo2}% / ${state.co2}';
-                        color = Colors.blue;
-                      } else if (inst.title == 'Respiración') {
-                        val = '${state.resp}';
-                        color = Colors.orange;
-                      } else if (inst.title == 'Termómetro' ||
-                          inst.title == 'Temperatura') {
-                        val = '${state.temp.toStringAsFixed(1)}°';
-                        color = Colors.teal;
-                      } else if (inst.title == 'Glucómetro') {
-                        val = '${state.glucose}';
-                        color = Colors.purple;
-                      } else if (inst.title == 'Tensión Arterial') {
-                        val = '${state.sys}/${state.dia}';
-                        color = Colors.amber;
-                      }
-
-                      return _WaveBar(
-                          label: inst.title, value: val, color: color);
-                    },
-                  ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _WaveBar extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  const _WaveBar(
-      {required this.label, required this.value, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 100,
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(20),
-          border: Border(left: BorderSide(color: color, width: 4))),
-      child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        const Padding(
-            padding: EdgeInsets.all(16),
-            child: Icon(LucideIcons.activity, color: Colors.white24, size: 48)),
-        Padding(
-          padding: const EdgeInsets.only(right: 24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(label.toUpperCase(),
-                  style: GoogleFonts.manrope(
-                      color: color,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 11,
-                      letterSpacing: 1)),
-              Text(value,
-                  style: GoogleFonts.manrope(
-                      color: color,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 36,
-                      height: 1.1)),
-            ],
-          ),
-        )
-      ]),
-    );
-  }
-}
-
 class _VoiceModuleCell extends StatelessWidget {
   final Instrument instrument;
   final double scale;
@@ -1322,8 +1277,11 @@ class _VoiceModuleCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<SimulationState>();
     final msiTheme = state.theme;
+    final title = instrument.title;
+    final isCollapsed = state.isCollapsed(title);
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
       decoration: BoxDecoration(
         color: msiTheme.card,
         borderRadius: BorderRadius.circular(28 * scale),
@@ -1338,78 +1296,98 @@ class _VoiceModuleCell extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          Container(
-            padding: EdgeInsets.symmetric(
-                horizontal: 16 * scale, vertical: 14 * scale),
-            color: msiTheme.primary.withOpacity(0.03),
-            child: Row(
-              children: [
-                Icon(instrument.icon,
-                    color: instrument.textColor ?? msiTheme.primary,
-                    size: 20 * scale),
-                SizedBox(width: 10 * scale),
-                Expanded(
-                    child: Text('VOZ (IZQ)',
-                        style: GoogleFonts.manrope(
-                            fontSize: 11 * scale,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.5,
-                            color: (instrument.textColor ?? msiTheme.primary)
-                                .withOpacity(0.5)))),
-              ],
+          GestureDetector(
+            onTap: () => state.toggleCollapse(title),
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                  horizontal: 16 * scale, vertical: 14 * scale),
+              color: msiTheme.primary.withOpacity(0.03),
+              child: Row(
+                children: [
+                  Icon(instrument.icon,
+                      color: instrument.textColor ?? msiTheme.primary,
+                      size: 20 * scale),
+                  SizedBox(width: 10 * scale),
+                  Expanded(
+                      child: Text(isCollapsed ? 'VOZ' : 'VOZ (IZQ)',
+                          style: GoogleFonts.manrope(
+                              fontSize: 11 * scale,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
+                              color: (instrument.textColor ?? msiTheme.primary)
+                                  .withOpacity(isCollapsed ? 0.9 : 0.5)))),
+                  Icon(
+                    isCollapsed
+                        ? LucideIcons.chevronDown
+                        : LucideIcons.chevronUp,
+                    size: 16 * scale,
+                    color: msiTheme.primary.withOpacity(0.3),
+                  ),
+                ],
+              ),
             ),
           ),
-          Padding(
-            padding: EdgeInsets.all(20 * scale),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Modo:',
-                        style: GoogleFonts.manrope(
-                            fontSize: 10 * scale,
-                            fontWeight: FontWeight.bold,
-                            color: msiTheme.text.withOpacity(0.4))),
-                    Text(
-                      state.isHeadsetConnected ? 'AURICULAR' : 'BOCINA',
-                      style: GoogleFonts.manrope(
-                          fontSize: 9 * scale,
-                          fontWeight: FontWeight.w900,
-                          color: state.isHeadsetConnected
-                              ? Colors.green
-                              : Colors.red),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 16 * scale),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _SoundBtn(
-                        label: 'REPRODUCIR',
-                        icon: LucideIcons.playCircle,
-                        scale: scale,
-                        onTap: () => state.playLeft(),
+          if (!isCollapsed)
+            Padding(
+              padding: EdgeInsets.all(20 * scale),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('VOLUMEN:',
+                          style: GoogleFonts.manrope(
+                              fontSize: 10 * scale,
+                              fontWeight: FontWeight.bold,
+                              color: msiTheme.text.withOpacity(0.4))),
+                      GestureDetector(
+                        onTap: () => _showVolumeMenu(context, state, true),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 8 * scale, vertical: 2 * scale),
+                          decoration: BoxDecoration(
+                            color: msiTheme.primary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4 * scale),
+                          ),
+                          child: Text(
+                            '${(state.leftVolume * 100).round()}%',
+                            style: GoogleFonts.manrope(
+                                fontSize: 10 * scale,
+                                fontWeight: FontWeight.w900,
+                                color: msiTheme.primary),
+                          ),
+                        ),
                       ),
-                    ),
-                    SizedBox(width: 8 * scale),
-                    Expanded(
-                      child: _PTTBtn(scale: scale),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 8 * scale),
-                _SoundBtn(
-                  label: 'DETENER',
-                  icon: LucideIcons.square,
-                  scale: scale,
-                  isStop: true,
-                  onTap: () => state.stopSound(),
-                ),
-              ],
+                    ],
+                  ),
+                  SizedBox(height: 16 * scale),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _SoundBtn(
+                          label: 'REPRODUCIR',
+                          icon: LucideIcons.playCircle,
+                          scale: scale,
+                          onTap: () => state.playLeft(),
+                        ),
+                      ),
+                      SizedBox(width: 8 * scale),
+                      Expanded(
+                        child: _PTTBtn(scale: scale),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8 * scale),
+                  _SoundBtn(
+                    label: 'DETENER',
+                    icon: LucideIcons.square,
+                    scale: scale,
+                    isStop: true,
+                    onTap: () => state.stopSound(),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -1425,8 +1403,11 @@ class _StethoscopeModuleCell extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<SimulationState>();
     final msiTheme = state.theme;
+    final title = instrument.title;
+    final isCollapsed = state.isCollapsed(title);
 
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
       decoration: BoxDecoration(
         color: msiTheme.card,
         borderRadius: BorderRadius.circular(28 * scale),
@@ -1441,83 +1422,104 @@ class _StethoscopeModuleCell extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          Container(
-            padding: EdgeInsets.symmetric(
-                horizontal: 16 * scale, vertical: 14 * scale),
-            color: msiTheme.primary.withOpacity(0.03),
-            child: Row(
-              children: [
-                Icon(instrument.icon,
-                    color: instrument.textColor ?? msiTheme.primary,
-                    size: 20 * scale),
-                SizedBox(width: 10 * scale),
-                Expanded(
-                    child: Text('ESTETOSCOPIO (DER)',
-                        style: GoogleFonts.manrope(
-                            fontSize: 11 * scale,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 0.5,
-                            color: (instrument.textColor ?? msiTheme.primary)
-                                .withOpacity(0.5)))),
-              ],
+          GestureDetector(
+            onTap: () => state.toggleCollapse(title),
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                  horizontal: 16 * scale, vertical: 14 * scale),
+              color: msiTheme.primary.withOpacity(0.03),
+              child: Row(
+                children: [
+                  Icon(instrument.icon,
+                      color: instrument.textColor ?? msiTheme.primary,
+                      size: 20 * scale),
+                  SizedBox(width: 10 * scale),
+                  Expanded(
+                      child: Text(
+                          isCollapsed ? 'ESTETOSCOPIO' : 'ESTETOSCOPIO (DER)',
+                          style: GoogleFonts.manrope(
+                              fontSize: 11 * scale,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5,
+                              color: (instrument.textColor ?? msiTheme.primary)
+                                  .withOpacity(isCollapsed ? 0.9 : 0.5)))),
+                  Icon(
+                    isCollapsed
+                        ? LucideIcons.chevronDown
+                        : LucideIcons.chevronUp,
+                    size: 16 * scale,
+                    color: msiTheme.primary.withOpacity(0.3),
+                  ),
+                ],
+              ),
             ),
           ),
-          Padding(
-            padding: EdgeInsets.all(20 * scale),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Modo:',
-                        style: GoogleFonts.manrope(
-                            fontSize: 10 * scale,
-                            fontWeight: FontWeight.bold,
-                            color: msiTheme.text.withOpacity(0.4))),
-                    Text(
-                      state.isHeadsetConnected ? 'AURICULAR' : 'BOCINA',
-                      style: GoogleFonts.manrope(
-                          fontSize: 9 * scale,
-                          fontWeight: FontWeight.w900,
-                          color: state.isHeadsetConnected
-                              ? Colors.green
-                              : Colors.red),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 16 * scale),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _SoundBtn(
-                        label: 'LATIDOS',
-                        icon: LucideIcons.heartPulse,
-                        scale: scale,
-                        onTap: () => state.playRight(),
+          if (!isCollapsed)
+            Padding(
+              padding: EdgeInsets.all(20 * scale),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('VOLUMEN:',
+                          style: GoogleFonts.manrope(
+                              fontSize: 10 * scale,
+                              fontWeight: FontWeight.bold,
+                              color: msiTheme.text.withOpacity(0.4))),
+                      GestureDetector(
+                        onTap: () => _showVolumeMenu(context, state, false),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 8 * scale, vertical: 2 * scale),
+                          decoration: BoxDecoration(
+                            color: msiTheme.primary.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(4 * scale),
+                          ),
+                          child: Text(
+                            '${(state.rightVolume * 100).round()}%',
+                            style: GoogleFonts.manrope(
+                                fontSize: 10 * scale,
+                                fontWeight: FontWeight.w900,
+                                color: msiTheme.primary),
+                          ),
+                        ),
                       ),
-                    ),
-                    SizedBox(width: 8 * scale),
-                    Expanded(
-                      child: _SoundBtn(
-                        label: 'AMBOS',
-                        icon: LucideIcons.copy,
-                        scale: scale,
-                        onTap: () => state.playBothRight(),
+                    ],
+                  ),
+                  SizedBox(height: 16 * scale),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _SoundBtn(
+                          label: 'LATIDOS',
+                          icon: LucideIcons.heartPulse,
+                          scale: scale,
+                          onTap: () => state.playRight(),
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-                SizedBox(height: 8 * scale),
-                _SoundBtn(
-                  label: 'DETENER',
-                  icon: LucideIcons.square,
-                  scale: scale,
-                  isStop: true,
-                  onTap: () => state.stopSound(),
-                ),
-              ],
+                      SizedBox(width: 8 * scale),
+                      Expanded(
+                        child: _SoundBtn(
+                          label: 'AMBOS',
+                          icon: LucideIcons.copy,
+                          scale: scale,
+                          onTap: () => state.playBothRight(),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8 * scale),
+                  _SoundBtn(
+                    label: 'DETENER',
+                    icon: LucideIcons.square,
+                    scale: scale,
+                    isStop: true,
+                    onTap: () => state.stopSound(),
+                  ),
+                ],
+              ),
             ),
-          ),
         ],
       ),
     );

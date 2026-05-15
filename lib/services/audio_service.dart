@@ -26,9 +26,28 @@ class PannedAudioService extends ChangeNotifier {
   bool get isHeadsetConnected => _isHeadsetConnected;
   bool get isPTTActive => _isPTTActive;
 
+  double _leftVolume = 1.0;
+  double _rightVolume = 1.0;
+
   PannedAudioService() {
     _init();
   }
+
+  void setLeftVolume(double volume) {
+    _leftVolume = volume;
+    _leftOnlyPlayer.setVolume(volume);
+    notifyListeners();
+  }
+
+  void setRightVolume(double volume) {
+    _rightVolume = volume;
+    _rightPlayer1.setVolume(volume);
+    _rightPlayer2.setVolume(volume);
+    notifyListeners();
+  }
+
+  double get leftVolume => _leftVolume;
+  double get rightVolume => _rightVolume;
 
   Future<void> _init() async {
     // 1. Configure audio session for playback (initial state)

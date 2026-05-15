@@ -35,7 +35,7 @@ class SimulationState extends ChangeNotifier {
   // --- Core Vital Signs (Current Simulation) ---
   int _hr = 72; // Heart Rate (BPM)
   int _spo2 = 98; // Oxygen Saturation (%)
-  int _co2 = 40; // Capnography (mmHg)
+  int _co2 = 20; // Repurposed for FR in Sat% y FR (logical rate)
   int _resp = 14; // Respiratory Rate (/min)
   double _temp = 36.6; // Temperature (°C)
   int _glucose = 110; // Blood Glucose (mg/dL)
@@ -45,7 +45,7 @@ class SimulationState extends ChangeNotifier {
   // --- Transmitted Vital Signs (What the tablet sees) ---
   int _txHr = 72;
   int _txSpo2 = 98;
-  int _txCo2 = 40;
+  int _txCo2 = 20;
   int _txResp = 14;
   double _txTemp = 36.6;
   int _txGlucose = 110;
@@ -86,8 +86,7 @@ class SimulationState extends ChangeNotifier {
     Instrument(title: 'Termómetro', icon: LucideIcons.thermometer),
     Instrument(title: 'Glucómetro', icon: LucideIcons.droplets),
     Instrument(title: 'Frecuencia Cardíaca', icon: LucideIcons.heartPulse),
-    Instrument(title: 'Oxígeno y Gases', icon: LucideIcons.wind),
-    Instrument(title: 'Respiración', icon: LucideIcons.activity),
+    Instrument(title: 'Sat% y FR', icon: LucideIcons.wind),
     Instrument(title: 'Tensión Arterial', icon: LucideIcons.gauge),
     Instrument(title: 'Voz', icon: LucideIcons.mic),
     Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
@@ -104,11 +103,7 @@ class SimulationState extends ChangeNotifier {
       id: '2',
       title: 'Telemetría Avanzada',
       icon: LucideIcons.activity,
-      instrumentTitles: [
-        'Frecuencia Cardíaca',
-        'Oxígeno y Gases',
-        'Termómetro'
-      ],
+      instrumentTitles: ['Frecuencia Cardíaca', 'Sat% y FR', 'Termómetro'],
     ),
     InstrumentalPreset(
       id: '3',
@@ -123,7 +118,7 @@ class SimulationState extends ChangeNotifier {
       icon: LucideIcons.clipboardList,
       instrumentTitles: [
         'Frecuencia Cardíaca',
-        'Oxígeno y Gases',
+        'Sat% y FR',
         'Termómetro',
         'Tensión Arterial',
         'Voz',
@@ -157,7 +152,7 @@ class SimulationState extends ChangeNotifier {
         'Termómetro',
         'Tensión Arterial',
         'Frecuencia Cardíaca',
-        'Oxígeno y Gases'
+        'Sat% y FR'
       ],
       isClinical: true,
       allowedEvents: [
@@ -174,7 +169,7 @@ class SimulationState extends ChangeNotifier {
   ];
 
   int _themeIndex = 0;
-  int _hubColumns = 2;
+  int _hubColumns = 1;
   final Set<String> _collapsedInstruments = {};
 
   SimulationState() {
@@ -185,6 +180,16 @@ class SimulationState extends ChangeNotifier {
 
   bool get isHeadsetConnected => _audioService.isHeadsetConnected;
   bool get isPTTActive => _audioService.isPTTActive;
+  double get leftVolume => _audioService.leftVolume;
+  double get rightVolume => _audioService.rightVolume;
+
+  void setLeftVolume(double volume) {
+    _audioService.setLeftVolume(volume);
+  }
+
+  void setRightVolume(double volume) {
+    _audioService.setRightVolume(volume);
+  }
 
   Future<void> startPTT() async {
     await _audioService.startPTT();
@@ -238,12 +243,27 @@ class SimulationState extends ChangeNotifier {
 
   List<ClinicalEvent> _activeEvents = [];
   List<String> _activeMeasurements = [];
+  Map<String, bool> _completedMeasurements = {};
 
   List<ClinicalEvent> get activeEvents =>
       _isRunning ? (_activeEvents.isEmpty ? _events : _activeEvents) : _events;
   List<String> get activeMeasurements => _isRunning
       ? (_activeMeasurements.isEmpty ? _measurements : _activeMeasurements)
       : _measurements;
+
+  bool isMeasurementCompleted(String name) =>
+      _completedMeasurements[name] ?? false;
+
+  void toggleMeasurement(String name) {
+    if (!_completedMeasurements.containsKey(name)) {
+      _completedMeasurements[name] = true;
+    } else {
+      _completedMeasurements[name] = !_completedMeasurements[name]!;
+    }
+    _addLog("Checklist",
+        "$name: ${_completedMeasurements[name]! ? 'COMPLETADO' : 'PENDIENTE'}");
+    notifyListeners();
+  }
 
   void applyPreset(InstrumentalPreset preset) {
     // Reorder _instruments to match preset's order
@@ -269,6 +289,10 @@ class SimulationState extends ChangeNotifier {
     // Setup active actions
     _activeEvents = List.from(preset.allowedEvents);
     _activeMeasurements = List.from(preset.allowedMeasurements);
+    _completedMeasurements.clear();
+    for (var m in _activeMeasurements) {
+      _completedMeasurements[m] = false;
+    }
 
     // If empty (legacy/default), maybe we want to allow all?
     // Usually, if a clinical case is selected, it should have its own.
@@ -329,8 +353,7 @@ class SimulationState extends ChangeNotifier {
           Instrument(title: 'Glucómetro', icon: LucideIcons.droplets),
           Instrument(
               title: 'Frecuencia Cardíaca', icon: LucideIcons.heartPulse),
-          Instrument(title: 'Oxígeno y Gases', icon: LucideIcons.wind),
-          Instrument(title: 'Respiración', icon: LucideIcons.activity),
+          Instrument(title: 'Sat% y FR', icon: LucideIcons.wind),
           Instrument(title: 'Tensión Arterial', icon: LucideIcons.gauge),
           Instrument(title: 'Voz', icon: LucideIcons.mic),
           Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
@@ -377,8 +400,8 @@ class SimulationState extends ChangeNotifier {
             preset.instrumentTitles.remove('Pulsioxímetro');
             if (!preset.instrumentTitles.contains('Frecuencia Cardíaca'))
               preset.instrumentTitles.add('Frecuencia Cardíaca');
-            if (!preset.instrumentTitles.contains('Oxígeno y Gases'))
-              preset.instrumentTitles.add('Oxígeno y Gases');
+            if (!preset.instrumentTitles.contains('Sat% y FR'))
+              preset.instrumentTitles.add('Sat% y FR');
           }
           return preset;
         }).toList();
@@ -488,10 +511,8 @@ class SimulationState extends ChangeNotifier {
       if (vitalKey == 'hr')
         instrumentTitle = 'Frecuencia Cardíaca';
       else
-        instrumentTitle = 'Oxígeno y Gases';
-    } else if (vitalKey == 'resp')
-      instrumentTitle = 'Respiración';
-    else if (vitalKey == 'temp')
+        instrumentTitle = 'Sat% y FR';
+    } else if (vitalKey == 'temp')
       instrumentTitle = 'Termómetro';
     else if (vitalKey == 'glucose')
       instrumentTitle = 'Glucómetro';
@@ -516,9 +537,8 @@ class SimulationState extends ChangeNotifier {
 
   bool _checkIfPending(String instrumentTitle) {
     if (instrumentTitle == 'Frecuencia Cardíaca') return _hr != _txHr;
-    if (instrumentTitle == 'Oxígeno y Gases')
+    if (instrumentTitle == 'Sat% y FR')
       return _spo2 != _txSpo2 || _co2 != _txCo2;
-    if (instrumentTitle == 'Respiración') return _resp != _txResp;
     if (instrumentTitle == 'Termómetro') return _temp != _txTemp;
     if (instrumentTitle == 'Glucómetro') return _glucose != _txGlucose;
     if (instrumentTitle == 'Tensión Arterial')
@@ -528,11 +548,10 @@ class SimulationState extends ChangeNotifier {
 
   void _syncTransmittedValues(String instrumentTitle) {
     if (instrumentTitle == 'Frecuencia Cardíaca') _txHr = _hr;
-    if (instrumentTitle == 'Oxígeno y Gases') {
+    if (instrumentTitle == 'Sat% y FR') {
       _txSpo2 = _spo2;
       _txCo2 = _co2;
     }
-    if (instrumentTitle == 'Respiración') _txResp = _resp;
     if (instrumentTitle == 'Termómetro') _txTemp = _temp;
     if (instrumentTitle == 'Glucómetro') _txGlucose = _glucose;
     if (instrumentTitle == 'Tensión Arterial') {
@@ -622,6 +641,23 @@ class SimulationState extends ChangeNotifier {
     _lastGlucose = _glucose;
     _lastSys = _sys;
     _lastDia = _dia;
+    _completedMeasurements.clear();
+    _collapsedInstruments.clear();
+    _collapsedInstruments.addAll(enabledInstruments.map((i) => i.title));
+
+    // If it's a "Quick Start" (no active events/measurements set by a preset),
+    // we use the global ones.
+    if (_activeEvents.isEmpty) {
+      _activeEvents = List.from(_events);
+    }
+    if (_activeMeasurements.isEmpty) {
+      _activeMeasurements = List.from(_measurements);
+    }
+
+    // Initialize completion status
+    for (var m in _activeMeasurements) {
+      _completedMeasurements[m] = false;
+    }
 
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       _elapsed += const Duration(seconds: 1);
@@ -645,9 +681,8 @@ class SimulationState extends ChangeNotifier {
   void _checkAndLogVitalsChanges() {
     List<String> changes = [];
     if (_hr != _lastHr) changes.add("FC: $_hr BPM");
-    if (_spo2 != _lastSpo2) changes.add("SpO2: $_spo2%");
-    if (_co2 != _lastCo2) changes.add("CO2: $_co2 mmHg");
-    if (_resp != _lastResp) changes.add("FR: $_resp /min");
+    if (_spo2 != _lastSpo2) changes.add("Sat%: $_spo2%");
+    if (_co2 != _lastCo2) changes.add("FR: $_co2 rpm");
     if (_temp != _lastTemp) changes.add("Temp: ${_temp.toStringAsFixed(1)}°C");
     if (_glucose != _lastGlucose) changes.add("Glucosa: $_glucose mg/dL");
     if (_sys != _lastSys || _dia != _lastDia)
@@ -674,6 +709,23 @@ class SimulationState extends ChangeNotifier {
     _vitalsTimer?.cancel();
     _logTimer?.cancel();
     _telemetryService.stop();
+
+    // Final checklist summary
+    if (_completedMeasurements.isNotEmpty) {
+      int total = _completedMeasurements.length;
+      int completed = _completedMeasurements.values.where((v) => v).length;
+
+      String summary = "Desempeño Checklist ($completed/$total):\n";
+      summary += _completedMeasurements.entries
+          .map((e) => "${e.value ? '✅' : '❌'} ${e.key}")
+          .join("\n");
+      _addLog("Evaluación Final", summary);
+    }
+
+    _activeEvents = [];
+    _activeMeasurements = [];
+    _completedMeasurements.clear();
+
     _addLog("Simulación Finalizada", "Sesión finalizada por el operador.");
     notifyListeners();
   }
@@ -684,8 +736,7 @@ class SimulationState extends ChangeNotifier {
       Instrument(title: 'Termómetro', icon: LucideIcons.thermometer),
       Instrument(title: 'Glucómetro', icon: LucideIcons.droplets),
       Instrument(title: 'Frecuencia Cardíaca', icon: LucideIcons.heartPulse),
-      Instrument(title: 'Oxígeno y Gases', icon: LucideIcons.wind),
-      Instrument(title: 'Respiración', icon: LucideIcons.activity),
+      Instrument(title: 'Sat% y FR', icon: LucideIcons.wind),
       Instrument(title: 'Tensión Arterial', icon: LucideIcons.gauge),
       Instrument(title: 'Voz', icon: LucideIcons.mic),
       Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
@@ -703,11 +754,7 @@ class SimulationState extends ChangeNotifier {
         id: '2',
         title: 'Telemetría Avanzada',
         icon: LucideIcons.activity,
-        instrumentTitles: [
-          'Frecuencia Cardíaca',
-          'Oxígeno y Gases',
-          'Termómetro'
-        ],
+        instrumentTitles: ['Frecuencia Cardíaca', 'Sat% y FR', 'Termómetro'],
       ),
       InstrumentalPreset(
         id: '3',
@@ -721,7 +768,7 @@ class SimulationState extends ChangeNotifier {
         icon: LucideIcons.clipboardList,
         instrumentTitles: [
           'Frecuencia Cardíaca',
-          'Oxígeno y Gases',
+          'Sat% y FR',
           'Termómetro',
           'Tensión Arterial',
           'Estetoscopio'
@@ -754,7 +801,7 @@ class SimulationState extends ChangeNotifier {
           'Termómetro',
           'Tensión Arterial',
           'Frecuencia Cardíaca',
-          'Oxígeno y Gases'
+          'Sat% y FR'
         ],
         isClinical: true,
         allowedEvents: [
@@ -771,7 +818,7 @@ class SimulationState extends ChangeNotifier {
     ]);
 
     _themeIndex = 0;
-    _hubColumns = 2;
+    _hubColumns = 1;
     _collapsedInstruments.clear();
     _saveSettings();
     notifyListeners();
@@ -977,31 +1024,22 @@ class SimulationState extends ChangeNotifier {
           "unit": "bpm",
           "color": _hexFromColor(inst.textColor ?? const Color(0xFF22C55E)),
         });
-      } else if (inst.title == 'Oxígeno y Gases') {
+      } else if (inst.title == 'Sat% y FR') {
         payload.add({
           "id": "spo2_01",
           "type": "spo2",
-          "label": "SpO2",
+          "label": "Sat%",
           "value": "$_spo2",
           "unit": "%",
           "color": _hexFromColor(inst.textColor ?? const Color(0xFF3B82F6)),
         });
         payload.add({
           "id": "co2_01",
-          "type": "co2",
-          "label": "EtCO2",
-          "value": "$_co2",
-          "unit": "mmHg",
-          "color": _hexFromColor(inst.textColor ?? const Color(0xFFEAB308)),
-        });
-      } else if (inst.title == 'Respiración') {
-        payload.add({
-          "id": "resp_01",
           "type": "resp",
-          "label": "Respiratory",
-          "value": "$_resp",
+          "label": "FR",
+          "value": "$_co2",
           "unit": "rpm",
-          "color": _hexFromColor(inst.textColor ?? const Color(0xFFA855F7)),
+          "color": _hexFromColor(inst.textColor ?? const Color(0xFFEAB308)),
         });
       } else if (inst.title == 'Tensión Arterial') {
         payload.add({
