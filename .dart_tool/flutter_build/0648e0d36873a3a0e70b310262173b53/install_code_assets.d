@@ -1,0 +1,1 @@
+ C:\\Users\\Tomeu\\Desktop\\msi---medical-simulated-instruments\\.dart_tool\\flutter_build\\0648e0d36873a3a0e70b310262173b53\\native_assets.json: 

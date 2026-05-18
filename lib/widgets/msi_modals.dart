@@ -1092,7 +1092,7 @@ class ActionListManager extends StatelessWidget {
     final vits = [
       {'key': 'hr', 'label': 'FC (BPM)'},
       {'key': 'spo2', 'label': 'SpO2 (%)'},
-      {'key': 'resp', 'label': 'FR (/min)'},
+      {'key': 'co2', 'label': 'FR (rpm)'},
       {'key': 'temp', 'label': 'Temp (°C)'},
       {'key': 'glucose', 'label': 'Glu (mg/dL)'},
       {'key': 'sys', 'label': 'PAS (mmHg)'},
