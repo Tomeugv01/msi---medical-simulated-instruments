@@ -410,9 +410,42 @@ class _TelemetryStatusBadge extends StatelessWidget {
                             ),
                           ),
                           child: ListTile(
-                            onTap: () {
-                              telemetry.connectToMonitor(device.id);
-                              Navigator.pop(context);
+                            onTap: () async {
+                              // Mostrar diálogo de progreso
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (context) => AlertDialog(
+                                  content: Row(
+                                    children: [
+                                      const CircularProgressIndicator(),
+                                      const SizedBox(width: 16),
+                                      Text('Conectando...',
+                                          style: GoogleFonts.manrope()),
+                                    ],
+                                  ),
+                                ),
+                              );
+
+                              final success =
+                                  await telemetry.connectToMonitor(device.id);
+                              Navigator.pop(context); // cerrar diálogo
+
+                              if (success) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text(
+                                          'Monitor conectado correctamente')),
+                                );
+                              } else {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                      content: Text(
+                                          'Error al conectar. Inténtalo de nuevo'),
+                                      backgroundColor: Colors.red),
+                                );
+                              }
+                              Navigator.pop(context); // cerrar el bottom sheet
                             },
                             leading: Icon(
                               LucideIcons.monitor,
@@ -870,6 +903,29 @@ class HubCell extends StatelessWidget {
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      // Botón de visibilidad en el monitor (ojo)
+                      GestureDetector(
+                        onTap: () => state.toggleVisibilityOnMonitor(title),
+                        child: Container(
+                          padding: EdgeInsets.all(8 * scale),
+                          decoration: BoxDecoration(
+                            color: instrument.isVisibleOnMonitor
+                                ? Colors.blue.withOpacity(0.1)
+                                : Colors.grey.withOpacity(0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            instrument.isVisibleOnMonitor
+                                ? LucideIcons.eye
+                                : LucideIcons.eyeOff,
+                            size: 14 * scale,
+                            color: instrument.isVisibleOnMonitor
+                                ? Colors.blue
+                                : Colors.grey,
+                          ),
+                        ),
+                      ),
+                      // Botón SYNC si está en modo manual y tiene cambios pendientes
                       if (instrument.isManualTransmission &&
                           instrument.hasPendingSync)
                         GestureDetector(
@@ -909,6 +965,7 @@ class HubCell extends StatelessWidget {
                             ),
                           ),
                         ),
+                      // Botón de modo manual/automático
                       GestureDetector(
                         onTap: () => state.toggleTransmissionMode(title),
                         child: Container(

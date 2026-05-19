@@ -298,6 +298,10 @@ class SimulationState extends ChangeNotifier {
     // Usually, if a clinical case is selected, it should have its own.
     // Let's stick to what's in the preset.
 
+    // Ensure telemetry is stopped before starting a new simulation/preset
+    try {
+      _telemetryService.stop();
+    } catch (_) {}
     startSimulation();
     notifyListeners();
   }
@@ -320,6 +324,17 @@ class SimulationState extends ChangeNotifier {
       _collapsedInstruments.add(title);
     }
     notifyListeners();
+  }
+
+  // Método nuevo para alternar visibilidad en el monitor
+  void toggleVisibilityOnMonitor(String instrumentTitle) {
+    final index = _instruments.indexWhere((i) => i.title == instrumentTitle);
+    if (index != -1) {
+      _instruments[index].isVisibleOnMonitor =
+          !_instruments[index].isVisibleOnMonitor;
+      _saveSettings();
+      notifyListeners();
+    }
   }
 
   List<Instrument> get displayInstruments {
@@ -364,7 +379,9 @@ class SimulationState extends ChangeNotifier {
           if (title == 'Pulsioxímetro') continue; // Clean legacy entry
           if (title == 'Módulo de Sonido') continue; // Direct split migration
           final isEnabled = item['isEnabled'] ?? true;
-          final isManual = item['isManualTransmission'] ?? false;
+          final isManual = item['isManualTransmission'] ??
+              true; // <-- Cambiado: si no existe, true
+          final isVisible = item['isVisibleOnMonitor'] ?? true;
           final colorVal = item['textColor'];
           final Color? textColor = colorVal != null ? Color(colorVal) : null;
           final original = defaultInstruments.firstWhere(
@@ -377,6 +394,7 @@ class SimulationState extends ChangeNotifier {
             isEnabled: isEnabled,
             textColor: textColor,
             isManualTransmission: isManual,
+            isVisibleOnMonitor: isVisible,
           ));
         }
 
@@ -441,6 +459,7 @@ class SimulationState extends ChangeNotifier {
                 'isEnabled': i.isEnabled,
                 'textColor': i.textColor?.value,
                 'isManualTransmission': i.isManualTransmission,
+                'isVisibleOnMonitor': i.isVisibleOnMonitor,
               })
           .toList();
       await prefs.setString('instruments', jsonEncode(instrumentsData));
@@ -579,7 +598,9 @@ class SimulationState extends ChangeNotifier {
     if (idx != -1) {
       _syncTransmittedValues(instrumentTitle);
       _instruments[idx].hasPendingSync = false;
-      _sendVitalsToDevice();
+      // Enviar solo este instrumento al monitor
+      _sendSingleInstrumentToMonitor(instrumentTitle);
+      _sendVitalsToDevice(); // Para hardware externo
       notifyListeners();
     }
   }
@@ -614,6 +635,11 @@ class SimulationState extends ChangeNotifier {
 
   void startSimulation() async {
     if (_isRunning) return;
+    // Ensure telemetry service is stopped and clean before starting
+    try {
+      await _telemetryService.stop();
+      await Future.delayed(const Duration(milliseconds: 300));
+    } catch (_) {}
 
     // Request Peripheral and Scanning Permissions
     await [
@@ -669,6 +695,7 @@ class SimulationState extends ChangeNotifier {
       _broadcastToMonitor();
     });
 
+    // Start searching for monitors after ensuring telemetry was reset
     _telemetryService.startSearch();
 
     _logTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
@@ -1008,70 +1035,90 @@ class SimulationState extends ChangeNotifier {
   }
 
   /// Converts current simulation state to a JSON format the MSI Monitor app expects.
+  /// Converts current simulation state to a JSON format the MSI Monitor app expects.
   void _broadcastToMonitor() {
     if (!_isRunning) return;
-
     final List<Map<String, dynamic>> payload = [];
-
-    // Helper to map current instruments to what the Monitor expects
     for (var inst in enabledInstruments) {
-      if (inst.title == 'Frecuencia Cardíaca') {
-        payload.add({
-          "id": "hr_01",
-          "type": "hr",
-          "label": "Heart Rate",
-          "value": "$_hr",
-          "unit": "bpm",
-          "color": _hexFromColor(inst.textColor ?? const Color(0xFF22C55E)),
-        });
-      } else if (inst.title == 'Sat% y FR') {
-        payload.add({
-          "id": "spo2_01",
-          "type": "spo2",
-          "label": "Sat%",
-          "value": "$_spo2",
-          "unit": "%",
-          "color": _hexFromColor(inst.textColor ?? const Color(0xFF3B82F6)),
-        });
-        payload.add({
-          "id": "co2_01",
-          "type": "resp",
-          "label": "FR",
-          "value": "$_co2",
-          "unit": "rpm",
-          "color": _hexFromColor(inst.textColor ?? const Color(0xFFEAB308)),
-        });
-      } else if (inst.title == 'Tensión Arterial') {
-        payload.add({
-          "id": "bp_01",
-          "type": "bp",
-          "label": "Blood Pressure",
-          "value": "$_sys/$_dia",
-          "unit": "mmHg",
-          "color": _hexFromColor(inst.textColor ?? const Color(0xFFEF4444)),
-        });
-      } else if (inst.title == 'Termómetro') {
-        payload.add({
-          "id": "temp_01",
-          "type": "temp",
-          "label": "Temperature",
-          "value": _temp.toStringAsFixed(1),
-          "unit": "°C",
-          "color": _hexFromColor(inst.textColor ?? const Color(0xFF06B6D4)),
-        });
-      } else if (inst.title == 'Glucómetro') {
-        payload.add({
-          "id": "glu_01",
-          "type": "glu",
-          "label": "Glucose",
-          "value": "$_glucose",
-          "unit": "mg/dL",
-          "color": _hexFromColor(inst.textColor ?? const Color(0xFFF97316)),
-        });
-      }
+      if (!inst.isVisibleOnMonitor) continue;
+      // YA NO SALTAMOS LOS MANUALES: se incluyen con sus valores transmitidos (_tx)
+      _addInstrumentToPayload(inst, payload);
     }
+    if (payload.isNotEmpty) {
+      _telemetryService.updateMonitor(payload);
+    }
+  }
 
-    _telemetryService.updateMonitor(payload);
+  // Nuevo helper para añadir instrumento al payload
+  void _addInstrumentToPayload(
+      Instrument inst, List<Map<String, dynamic>> payload) {
+    if (inst.title == 'Frecuencia Cardíaca') {
+      payload.add({
+        "id": "hr_01",
+        "type": "hr",
+        "label": "Heart Rate",
+        "value": "$_txHr",
+        "unit": "bpm",
+        "color": _hexFromColor(inst.textColor ?? const Color(0xFF22C55E)),
+      });
+    } else if (inst.title == 'Sat% y FR') {
+      payload.add({
+        "id": "spo2_01",
+        "type": "spo2",
+        "label": "Sat%",
+        "value": "$_txSpo2",
+        "unit": "%",
+        "color": _hexFromColor(inst.textColor ?? const Color(0xFF3B82F6)),
+      });
+      payload.add({
+        "id": "co2_01",
+        "type": "resp",
+        "label": "FR",
+        "value": "$_txCo2",
+        "unit": "rpm",
+        "color": _hexFromColor(inst.textColor ?? const Color(0xFFEAB308)),
+      });
+    } else if (inst.title == 'Tensión Arterial') {
+      payload.add({
+        "id": "bp_01",
+        "type": "bp",
+        "label": "Blood Pressure",
+        "value": "$_txSys/$_txDia",
+        "unit": "mmHg",
+        "color": _hexFromColor(inst.textColor ?? const Color(0xFFEF4444)),
+      });
+    } else if (inst.title == 'Termómetro') {
+      payload.add({
+        "id": "temp_01",
+        "type": "temp",
+        "label": "Temperature",
+        "value": _txTemp.toStringAsFixed(1),
+        "unit": "°C",
+        "color": _hexFromColor(inst.textColor ?? const Color(0xFF06B6D4)),
+      });
+    } else if (inst.title == 'Glucómetro') {
+      payload.add({
+        "id": "glu_01",
+        "type": "glu",
+        "label": "Glucose",
+        "value": "$_txGlucose",
+        "unit": "mg/dL",
+        "color": _hexFromColor(inst.textColor ?? const Color(0xFFF97316)),
+      });
+    }
+  }
+
+  // Nuevo método para enviar un solo instrumento al monitor
+  void _sendSingleInstrumentToMonitor(String instrumentTitle) {
+    if (!_isRunning) return;
+    final inst = _instruments.firstWhere((i) => i.title == instrumentTitle,
+        orElse: () => Instrument(title: '', icon: LucideIcons.box));
+    if (inst.title.isEmpty || !inst.isVisibleOnMonitor) return;
+    final List<Map<String, dynamic>> payload = [];
+    _addInstrumentToPayload(inst, payload);
+    if (payload.isNotEmpty) {
+      _telemetryService.updateMonitor(payload);
+    }
   }
 
   String _hexFromColor(Color color) {

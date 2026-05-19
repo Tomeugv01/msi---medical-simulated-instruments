@@ -1,57 +1,53 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
-/// [Instrument] defines a tile in the dashboard.
-/// It tracks visibility preference and custom color selection.
 class Instrument {
   final String title;
   final IconData icon;
   bool isEnabled;
-  Color? textColor; // User-defined color for the vital sign value
-
-  // Manual transmission controls
+  Color? textColor;
   bool isManualTransmission;
   bool hasPendingSync;
+  bool isVisibleOnMonitor;
 
   Instrument({
     required this.title,
     required this.icon,
     this.isEnabled = true,
     this.textColor,
-    this.isManualTransmission = false,
+    this.isManualTransmission = true, // AHORA MANUAL POR DEFECTO
     this.hasPendingSync = false,
+    this.isVisibleOnMonitor = true,
   });
 }
 
-/// [ClinicalEvent] represents an action taken during simulation (e.g., 'RCP', 'Drug').
-/// It can have [healthEffects] which automatically shift vitals over time.
 class ClinicalEvent {
   final String title;
-  final Map<String, double> healthEffects; // Map of vitalKey -> changeAmount (e.g. {'hr': +10})
+  final Map<String, double> healthEffects;
 
   ClinicalEvent({required this.title, this.healthEffects = const {}});
 
   Map<String, dynamic> toJson() => {
-    'title': title,
-    'healthEffects': healthEffects,
-  };
+        'title': title,
+        'healthEffects': healthEffects,
+      };
 
   factory ClinicalEvent.fromJson(Map<String, dynamic> json) {
     return ClinicalEvent(
       title: json['title'] ?? '',
-      healthEffects: (json['healthEffects'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, (v as num).toDouble())) ?? {},
+      healthEffects: (json['healthEffects'] as Map<String, dynamic>?)
+              ?.map((k, v) => MapEntry(k, (v as num).toDouble())) ??
+          {},
     );
   }
 }
 
-/// [InstrumentalPreset] is a saved configuration of instruments and allowed actions.
-/// Used for quick setup of training scenarios or specific clinical cases.
 class InstrumentalPreset {
   final String id;
   String title;
   IconData icon;
-  List<String> instrumentTitles; // Ordered list of instruments to show
-  bool isClinical; // If true, it can define specific allowed actions
+  List<String> instrumentTitles;
+  bool isClinical;
   List<ClinicalEvent> allowedEvents;
   List<String> allowedMeasurements;
 
@@ -63,18 +59,21 @@ class InstrumentalPreset {
     this.isClinical = false,
     List<ClinicalEvent>? allowedEvents,
     List<String>? allowedMeasurements,
-  }) : allowedEvents = allowedEvents ?? [],
-       allowedMeasurements = allowedMeasurements ?? [];
+  })  : allowedEvents = allowedEvents ?? [],
+        allowedMeasurements = allowedMeasurements ?? [];
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'title': title,
-    'iconKey': iconMap.entries.firstWhere((e) => e.value == icon, orElse: () => iconMap.entries.first).key,
-    'instrumentTitles': instrumentTitles,
-    'isClinical': isClinical,
-    'allowedEvents': allowedEvents.map((e) => e.toJson()).toList(),
-    'allowedMeasurements': allowedMeasurements,
-  };
+        'id': id,
+        'title': title,
+        'iconKey': iconMap.entries
+            .firstWhere((e) => e.value == icon,
+                orElse: () => iconMap.entries.first)
+            .key,
+        'instrumentTitles': instrumentTitles,
+        'isClinical': isClinical,
+        'allowedEvents': allowedEvents.map((e) => e.toJson()).toList(),
+        'allowedMeasurements': allowedMeasurements,
+      };
 
   factory InstrumentalPreset.fromJson(Map<String, dynamic> json) {
     return InstrumentalPreset(
@@ -84,9 +83,10 @@ class InstrumentalPreset {
       instrumentTitles: List<String>.from(json['instrumentTitles'] ?? []),
       isClinical: json['isClinical'] ?? false,
       allowedEvents: (json['allowedEvents'] as List?)?.map((e) {
-        if (e is String) return ClinicalEvent(title: e);
-        return ClinicalEvent.fromJson(e);
-      }).toList() ?? [],
+            if (e is String) return ClinicalEvent(title: e);
+            return ClinicalEvent.fromJson(e);
+          }).toList() ??
+          [],
       allowedMeasurements: List<String>.from(json['allowedMeasurements'] ?? []),
     );
   }
