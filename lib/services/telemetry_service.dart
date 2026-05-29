@@ -151,6 +151,7 @@ class TelemetryService extends ChangeNotifier {
           final mtu = await _ble.requestMtu(deviceId: deviceId, mtu: 512);
           debugPrint("📏 MTU: $mtu");
           _isReady = true;
+          notifyListeners();
           success = true;
           if (!completer.isCompleted) completer.complete(true);
         } catch (e) {
@@ -160,7 +161,6 @@ class TelemetryService extends ChangeNotifier {
           success = false;
           if (!completer.isCompleted) completer.complete(false);
         }
-        notifyListeners();
       } else if (state.connectionState == DeviceConnectionState.disconnected) {
         debugPrint("❌ Desconectado del monitor");
         if (_connectedDeviceId != null) {
@@ -200,6 +200,14 @@ class TelemetryService extends ChangeNotifier {
 
     _isConnecting = false;
     return result;
+  }
+
+  Future<void> setMonitorTheme(bool dark) async {
+    if (_connectedDeviceId == null || !_isReady) return;
+    final payload = [
+      {"type": "set_theme", "theme": dark ? "dark" : "light"}
+    ];
+    await updateMonitor(payload);
   }
 
   Future<void> stop() async {

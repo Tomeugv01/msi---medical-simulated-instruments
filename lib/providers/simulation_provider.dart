@@ -25,6 +25,7 @@ class SimulationState extends ChangeNotifier {
   Timer? _timer;
   Timer? _vitalsTimer;
   Timer? _logTimer;
+  final Map<String, Timer> _pendingTransmissions = {};
 
   // Audio Module Delegation
   final PannedAudioService _audioService = PannedAudioService();
@@ -35,7 +36,7 @@ class SimulationState extends ChangeNotifier {
   // --- Core Vital Signs (Current Simulation) ---
   int _hr = 72; // Heart Rate (BPM)
   int _spo2 = 98; // Oxygen Saturation (%)
-  int _co2 = 20; // Repurposed for FR in Sat% y FR (logical rate)
+  int _co2 = 20; // Repurposed for FR in SpO2 y FR (logical rate)
   int _resp = 14; // Respiratory Rate (/min)
   double _temp = 36.6; // Temperature (°C)
   int _glucose = 110; // Blood Glucose (mg/dL)
@@ -84,11 +85,12 @@ class SimulationState extends ChangeNotifier {
 
   final List<Instrument> _instruments = [
     Instrument(title: 'Termómetro', icon: LucideIcons.thermometer),
-    Instrument(title: 'Glucómetro', icon: LucideIcons.droplets),
-    Instrument(title: 'Frecuencia Cardíaca', icon: LucideIcons.heartPulse),
-    Instrument(title: 'Sat% y FR', icon: LucideIcons.wind),
-    Instrument(title: 'Tensión Arterial', icon: LucideIcons.gauge),
-    Instrument(title: 'Voz', icon: LucideIcons.mic),
+    Instrument(title: 'Glucemia', icon: LucideIcons.droplets),
+    Instrument(title: 'FC', icon: LucideIcons.heartPulse),
+    Instrument(title: 'SpO2 y FR', icon: LucideIcons.wind),
+    Instrument(
+        title: 'PANI/PAI', icon: LucideIcons.gauge, isVisibleOnMonitor: false),
+    Instrument(title: 'Ruidos Vocales', icon: LucideIcons.mic),
     Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
   ];
 
@@ -103,13 +105,13 @@ class SimulationState extends ChangeNotifier {
       id: '2',
       title: 'Telemetría Avanzada',
       icon: LucideIcons.activity,
-      instrumentTitles: ['Frecuencia Cardíaca', 'Sat% y FR', 'Termómetro'],
+      instrumentTitles: ['FC', 'SpO2 y FR', 'Termómetro'],
     ),
     InstrumentalPreset(
       id: '3',
       title: 'Control de Glucosa',
       icon: LucideIcons.droplets,
-      instrumentTitles: ['Glucómetro'],
+      instrumentTitles: ['Glucemia'],
     ),
     // Clinical Cases
     InstrumentalPreset(
@@ -117,11 +119,11 @@ class SimulationState extends ChangeNotifier {
       title: 'Parada Cardíaca (PCR)',
       icon: LucideIcons.clipboardList,
       instrumentTitles: [
-        'Frecuencia Cardíaca',
-        'Sat% y FR',
+        'FC',
+        'SpO2 y FR',
         'Termómetro',
-        'Tensión Arterial',
-        'Voz',
+        'PANI/PAI',
+        'Ruidos Vocales',
         'Estetoscopio'
       ],
       isClinical: true,
@@ -148,11 +150,11 @@ class SimulationState extends ChangeNotifier {
       title: 'Cetoacidosis Diabética',
       icon: LucideIcons.droplets,
       instrumentTitles: [
-        'Glucómetro',
+        'Glucemia',
         'Termómetro',
-        'Tensión Arterial',
-        'Frecuencia Cardíaca',
-        'Sat% y FR'
+        'PANI/PAI',
+        'FC',
+        'SpO2 y FR'
       ],
       isClinical: true,
       allowedEvents: [
@@ -170,6 +172,7 @@ class SimulationState extends ChangeNotifier {
 
   int _themeIndex = 0;
   int _hubColumns = 1;
+  bool _monitorThemeDark = true;
   final Set<String> _collapsedInstruments = {};
 
   SimulationState() {
@@ -237,6 +240,39 @@ class SimulationState extends ChangeNotifier {
 
   void deletePreset(String id) {
     _presets.removeWhere((p) => p.id == id);
+    _saveSettings();
+    notifyListeners();
+  }
+
+  void reorderPreset(int oldIndex, int newIndex, {required bool isClinical}) {
+    final filtered = _presets.where((p) => p.isClinical == isClinical).toList();
+    if (oldIndex < 0 || oldIndex >= filtered.length) return;
+    if (newIndex < 0) newIndex = 0;
+    if (newIndex > filtered.length) newIndex = filtered.length;
+
+    final preset = filtered[oldIndex];
+    final oldGlobalIndex = _presets.indexOf(preset);
+    if (oldGlobalIndex == -1) return;
+
+    // Remove from old position
+    _presets.removeAt(oldGlobalIndex);
+
+    // Recompute filtered list after removal
+    final remainingFiltered =
+        _presets.where((p) => p.isClinical == isClinical).toList();
+
+    int insertIndex;
+    if (newIndex >= remainingFiltered.length) {
+      // Insert after the last occurrence of this group or at the end
+      final lastIndex =
+          _presets.lastIndexWhere((p) => p.isClinical == isClinical);
+      insertIndex = lastIndex == -1 ? _presets.length : lastIndex + 1;
+    } else {
+      final target = remainingFiltered[newIndex];
+      insertIndex = _presets.indexOf(target);
+    }
+
+    _presets.insert(insertIndex, preset);
     _saveSettings();
     notifyListeners();
   }
@@ -309,9 +345,17 @@ class SimulationState extends ChangeNotifier {
   MSITheme get theme => appThemes[_themeIndex];
   int get themeIndex => _themeIndex;
   int get hubColumns => _hubColumns;
+  bool get monitorThemeDark => _monitorThemeDark;
 
   void setHubColumns(int count) {
     _hubColumns = count;
+    notifyListeners();
+  }
+
+  void setMonitorThemeDark(bool dark) {
+    if (_monitorThemeDark == dark) return;
+    _monitorThemeDark = dark;
+    _saveSettings();
     notifyListeners();
   }
 
@@ -333,6 +377,16 @@ class SimulationState extends ChangeNotifier {
       _instruments[index].isVisibleOnMonitor =
           !_instruments[index].isVisibleOnMonitor;
       _saveSettings();
+      _sendFullStateToMonitor();
+      notifyListeners();
+    }
+  }
+
+  void setInstrumentDelay(String instrumentTitle, int delayMs) {
+    final index = _instruments.indexWhere((i) => i.title == instrumentTitle);
+    if (index != -1) {
+      _instruments[index].transmissionDelayMs = delayMs;
+      _saveSettings();
       notifyListeners();
     }
   }
@@ -350,6 +404,25 @@ class SimulationState extends ChangeNotifier {
     notifyListeners();
   }
 
+  String _canonicalInstrumentTitle(String title) {
+    switch (title) {
+      case 'Frecuencia Cardíaca':
+        return 'FC';
+      case 'Sat% y FR':
+        return 'SpO2 y FR';
+      case 'Tensión Arterial':
+        return 'PANI/PAI';
+      case 'Glucómetro':
+        return 'Glucemia';
+      case 'Voz':
+      case 'Voice':
+      case 'Módulo de Sonido':
+        return 'Ruidos Vocales';
+      default:
+        return title;
+    }
+  }
+
   Future<void> _loadSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -357,31 +430,44 @@ class SimulationState extends ChangeNotifier {
       _student = prefs.getString('student') ?? '';
       _notes = prefs.getString('notes') ?? '';
       _themeIndex = prefs.getInt('themeIndex') ?? 0;
+      _monitorThemeDark = prefs.getBool('monitorThemeDark') ?? true;
 
       final instrumentsJson = prefs.getString('instruments');
       if (instrumentsJson != null) {
         final List<dynamic> list = jsonDecode(instrumentsJson);
         List<Instrument> loaded = [];
+        final loadedTitles = <String>{};
 
         final defaultInstruments = [
           Instrument(title: 'Termómetro', icon: LucideIcons.thermometer),
-          Instrument(title: 'Glucómetro', icon: LucideIcons.droplets),
+          Instrument(title: 'Glucemia', icon: LucideIcons.droplets),
+          Instrument(title: 'FC', icon: LucideIcons.heartPulse),
+          Instrument(title: 'SpO2 y FR', icon: LucideIcons.wind),
           Instrument(
-              title: 'Frecuencia Cardíaca', icon: LucideIcons.heartPulse),
-          Instrument(title: 'Sat% y FR', icon: LucideIcons.wind),
-          Instrument(title: 'Tensión Arterial', icon: LucideIcons.gauge),
-          Instrument(title: 'Voz', icon: LucideIcons.mic),
+              title: 'PANI/PAI',
+              icon: LucideIcons.gauge,
+              isVisibleOnMonitor: false),
+          Instrument(title: 'Ruidos Vocales', icon: LucideIcons.mic),
           Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
         ];
 
         for (var item in list) {
-          final title = item['title'];
-          if (title == 'Pulsioxímetro') continue; // Clean legacy entry
-          if (title == 'Módulo de Sonido') continue; // Direct split migration
+          final originalTitle = item['title'] ?? '';
+          if (originalTitle == 'Pulsioxímetro') continue; // Clean legacy entry
+          if (originalTitle == 'Módulo de Sonido')
+            continue; // Direct split migration
+          final title = _canonicalInstrumentTitle(originalTitle);
           final isEnabled = item['isEnabled'] ?? true;
           final isManual = item['isManualTransmission'] ??
               true; // <-- Cambiado: si no existe, true
-          final isVisible = item['isVisibleOnMonitor'] ?? true;
+          final bool isVisibleFinal;
+          if (item.containsKey('isVisibleOnMonitor')) {
+            isVisibleFinal = item['isVisibleOnMonitor'] ?? true;
+          } else {
+            isVisibleFinal = title == 'PANI/PAI' ? false : true;
+          }
+          if (!loadedTitles.add(title)) continue;
+          final delay = ((item['transmissionDelayMs'] ?? 0) as num).toInt();
           final colorVal = item['textColor'];
           final Color? textColor = colorVal != null ? Color(colorVal) : null;
           final original = defaultInstruments.firstWhere(
@@ -394,7 +480,8 @@ class SimulationState extends ChangeNotifier {
             isEnabled: isEnabled,
             textColor: textColor,
             isManualTransmission: isManual,
-            isVisibleOnMonitor: isVisible,
+            isVisibleOnMonitor: isVisibleFinal,
+            transmissionDelayMs: delay,
           ));
         }
 
@@ -416,11 +503,22 @@ class SimulationState extends ChangeNotifier {
           // Migration: replace legacy Pulsioxímetro with the two new ones
           if (preset.instrumentTitles.contains('Pulsioxímetro')) {
             preset.instrumentTitles.remove('Pulsioxímetro');
-            if (!preset.instrumentTitles.contains('Frecuencia Cardíaca'))
-              preset.instrumentTitles.add('Frecuencia Cardíaca');
-            if (!preset.instrumentTitles.contains('Sat% y FR'))
-              preset.instrumentTitles.add('Sat% y FR');
+            if (!preset.instrumentTitles.contains('FC')) {
+              preset.instrumentTitles.add('FC');
+            }
+            if (!preset.instrumentTitles.contains('SpO2 y FR')) {
+              preset.instrumentTitles.add('SpO2 y FR');
+            }
           }
+          final normalizedTitles = <String>[];
+          for (final title in preset.instrumentTitles
+              .map(_canonicalInstrumentTitle)
+              .toList()) {
+            if (!normalizedTitles.contains(title)) {
+              normalizedTitles.add(title);
+            }
+          }
+          preset.instrumentTitles = normalizedTitles;
           return preset;
         }).toList();
         _presets.clear();
@@ -452,6 +550,7 @@ class SimulationState extends ChangeNotifier {
       await prefs.setString('student', _student);
       await prefs.setString('notes', _notes);
       await prefs.setInt('themeIndex', _themeIndex);
+      await prefs.setBool('monitorThemeDark', _monitorThemeDark);
 
       final instrumentsData = _instruments
           .map((i) => {
@@ -460,6 +559,7 @@ class SimulationState extends ChangeNotifier {
                 'textColor': i.textColor?.value,
                 'isManualTransmission': i.isManualTransmission,
                 'isVisibleOnMonitor': i.isVisibleOnMonitor,
+                'transmissionDelayMs': i.transmissionDelayMs,
               })
           .toList();
       await prefs.setString('instruments', jsonEncode(instrumentsData));
@@ -520,23 +620,19 @@ class SimulationState extends ChangeNotifier {
       // Reverse correlation logic for bidirectional manual adjustment
       _sys = (_dia / 0.67).round();
     }
-    notifyListeners();
-    _handleTransmissionUpdate(type);
-  }
 
-  void _handleTransmissionUpdate(String vitalKey) {
     String? instrumentTitle;
-    if (['hr', 'spo2', 'co2'].contains(vitalKey)) {
-      if (vitalKey == 'hr')
-        instrumentTitle = 'Frecuencia Cardíaca';
-      else
-        instrumentTitle = 'Sat% y FR';
-    } else if (vitalKey == 'temp')
+    if (type == 'hr') {
+      instrumentTitle = 'FC';
+    } else if (type == 'spo2' || type == 'co2') {
+      instrumentTitle = 'SpO2 y FR';
+    } else if (type == 'temp') {
       instrumentTitle = 'Termómetro';
-    else if (vitalKey == 'glucose')
-      instrumentTitle = 'Glucómetro';
-    else if (['sys', 'dia'].contains(vitalKey))
-      instrumentTitle = 'Tensión Arterial';
+    } else if (type == 'glucose') {
+      instrumentTitle = 'Glucemia';
+    } else if (type == 'sys' || type == 'dia') {
+      instrumentTitle = 'PANI/PAI';
+    }
 
     if (instrumentTitle != null) {
       final inst = _instruments.firstWhere((i) => i.title == instrumentTitle,
@@ -546,34 +642,55 @@ class SimulationState extends ChangeNotifier {
           inst.hasPendingSync = _checkIfPending(instrumentTitle);
         } else {
           _syncTransmittedValues(instrumentTitle);
+          _scheduleTransmission(instrumentTitle);
           _sendVitalsToDevice();
         }
       }
     } else {
       _sendVitalsToDevice();
     }
+
+    notifyListeners();
+  }
+
+  void _scheduleTransmission(String instrumentTitle) {
+    final inst = _instruments.firstWhere((i) => i.title == instrumentTitle,
+        orElse: () => Instrument(title: '', icon: LucideIcons.box));
+    if (inst.title.isEmpty) return;
+
+    final delayMs = inst.transmissionDelayMs;
+    _pendingTransmissions[instrumentTitle]?.cancel();
+
+    if (delayMs == 0) {
+      _sendFullStateToMonitor();
+    } else {
+      _pendingTransmissions[instrumentTitle] =
+          Timer(Duration(milliseconds: delayMs), () {
+        _sendFullStateToMonitor();
+        _pendingTransmissions.remove(instrumentTitle);
+      });
+    }
   }
 
   bool _checkIfPending(String instrumentTitle) {
-    if (instrumentTitle == 'Frecuencia Cardíaca') return _hr != _txHr;
-    if (instrumentTitle == 'Sat% y FR')
+    if (instrumentTitle == 'FC') return _hr != _txHr;
+    if (instrumentTitle == 'SpO2 y FR')
       return _spo2 != _txSpo2 || _co2 != _txCo2;
     if (instrumentTitle == 'Termómetro') return _temp != _txTemp;
-    if (instrumentTitle == 'Glucómetro') return _glucose != _txGlucose;
-    if (instrumentTitle == 'Tensión Arterial')
-      return _sys != _txSys || _dia != _txDia;
+    if (instrumentTitle == 'Glucemia') return _glucose != _txGlucose;
+    if (instrumentTitle == 'PANI/PAI') return _sys != _txSys || _dia != _txDia;
     return false;
   }
 
   void _syncTransmittedValues(String instrumentTitle) {
-    if (instrumentTitle == 'Frecuencia Cardíaca') _txHr = _hr;
-    if (instrumentTitle == 'Sat% y FR') {
+    if (instrumentTitle == 'FC') _txHr = _hr;
+    if (instrumentTitle == 'SpO2 y FR') {
       _txSpo2 = _spo2;
       _txCo2 = _co2;
     }
     if (instrumentTitle == 'Termómetro') _txTemp = _temp;
-    if (instrumentTitle == 'Glucómetro') _txGlucose = _glucose;
-    if (instrumentTitle == 'Tensión Arterial') {
+    if (instrumentTitle == 'Glucemia') _txGlucose = _glucose;
+    if (instrumentTitle == 'PANI/PAI') {
       _txSys = _sys;
       _txDia = _dia;
     }
@@ -587,6 +704,7 @@ class SimulationState extends ChangeNotifier {
       if (!_instruments[idx].isManualTransmission) {
         _syncTransmittedValues(instrumentTitle);
         _instruments[idx].hasPendingSync = false;
+        _sendFullStateToMonitor();
         _sendVitalsToDevice();
       }
       notifyListeners();
@@ -598,8 +716,7 @@ class SimulationState extends ChangeNotifier {
     if (idx != -1) {
       _syncTransmittedValues(instrumentTitle);
       _instruments[idx].hasPendingSync = false;
-      // Enviar solo este instrumento al monitor
-      _sendSingleInstrumentToMonitor(instrumentTitle);
+      _scheduleTransmission(instrumentTitle);
       _sendVitalsToDevice(); // Para hardware externo
       notifyListeners();
     }
@@ -650,12 +767,16 @@ class SimulationState extends ChangeNotifier {
     ].request();
 
     _isRunning = true;
+    for (var timer in _pendingTransmissions.values) {
+      timer.cancel();
+    }
+    _pendingTransmissions.clear();
     _elapsed = Duration.zero;
     _logs.clear();
     _addLog("Simulación Iniciada",
         "Sistema inicializado y flujo de telemetría establecido.");
 
-    if (_supervisor.isNotEmpty) _addLog("Supervisor Asignado", _supervisor);
+    if (_supervisor.isNotEmpty) _addLog("Profesor Asignado", _supervisor);
     if (_student.isNotEmpty) _addLog("Estudiante Asignado", _student);
     if (_notes.isNotEmpty) _addLog("Notas de la Sesión", _notes);
 
@@ -692,11 +813,13 @@ class SimulationState extends ChangeNotifier {
 
     _vitalsTimer = Timer.periodic(const Duration(seconds: 2), (timer) {
       _sendVitalsToDevice();
-      _broadcastToMonitor();
     });
 
     // Start searching for monitors after ensuring telemetry was reset
     _telemetryService.startSearch();
+    _telemetryService.removeListener(_onTelemetryReady);
+    _telemetryService.addListener(_onTelemetryReady);
+    _onTelemetryReady();
 
     _logTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       _checkAndLogVitalsChanges();
@@ -730,12 +853,33 @@ class SimulationState extends ChangeNotifier {
     }
   }
 
-  void stopSimulation() {
+  void _onTelemetryReady() {
+    if (_telemetryService.isConnected && _isRunning) {
+      _sendFullStateToMonitor();
+    }
+  }
+
+  Future<void> stopSimulation() async {
     _isRunning = false;
     _timer?.cancel();
     _vitalsTimer?.cancel();
     _logTimer?.cancel();
-    _telemetryService.stop();
+    _telemetryService.removeListener(_onTelemetryReady);
+    for (var timer in _pendingTransmissions.values) {
+      timer.cancel();
+    }
+    _pendingTransmissions.clear();
+
+    try {
+      await _telemetryService.updateMonitor([
+        {"type": "end_simulation"}
+      ]);
+      await Future.delayed(const Duration(milliseconds: 300));
+    } catch (e) {
+      debugPrint("Error al enviar fin de simulación: $e");
+    }
+
+    await _telemetryService.stop();
 
     // Final checklist summary
     if (_completedMeasurements.isNotEmpty) {
@@ -761,11 +905,11 @@ class SimulationState extends ChangeNotifier {
     _instruments.clear();
     _instruments.addAll([
       Instrument(title: 'Termómetro', icon: LucideIcons.thermometer),
-      Instrument(title: 'Glucómetro', icon: LucideIcons.droplets),
-      Instrument(title: 'Frecuencia Cardíaca', icon: LucideIcons.heartPulse),
-      Instrument(title: 'Sat% y FR', icon: LucideIcons.wind),
-      Instrument(title: 'Tensión Arterial', icon: LucideIcons.gauge),
-      Instrument(title: 'Voz', icon: LucideIcons.mic),
+      Instrument(title: 'Glucemia', icon: LucideIcons.droplets),
+      Instrument(title: 'FC', icon: LucideIcons.heartPulse),
+      Instrument(title: 'SpO2 y FR', icon: LucideIcons.wind),
+      Instrument(title: 'PANI/PAI', icon: LucideIcons.gauge),
+      Instrument(title: 'Ruidos Vocales', icon: LucideIcons.mic),
       Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
     ]);
 
@@ -781,23 +925,23 @@ class SimulationState extends ChangeNotifier {
         id: '2',
         title: 'Telemetría Avanzada',
         icon: LucideIcons.activity,
-        instrumentTitles: ['Frecuencia Cardíaca', 'Sat% y FR', 'Termómetro'],
+        instrumentTitles: ['FC', 'SpO2 y FR', 'Termómetro'],
       ),
       InstrumentalPreset(
         id: '3',
         title: 'Control de Glucosa',
         icon: LucideIcons.droplets,
-        instrumentTitles: ['Glucómetro'],
+        instrumentTitles: ['Glucemia'],
       ),
       InstrumentalPreset(
         id: 'c1',
         title: 'Parada Cardíaca (PCR)',
         icon: LucideIcons.clipboardList,
         instrumentTitles: [
-          'Frecuencia Cardíaca',
-          'Sat% y FR',
+          'FC',
+          'SpO2 y FR',
           'Termómetro',
-          'Tensión Arterial',
+          'PANI/PAI',
           'Estetoscopio'
         ],
         isClinical: true,
@@ -824,11 +968,11 @@ class SimulationState extends ChangeNotifier {
         title: 'Cetoacidosis Diabética',
         icon: LucideIcons.droplets,
         instrumentTitles: [
-          'Glucómetro',
+          'Glucemia',
           'Termómetro',
-          'Tensión Arterial',
-          'Frecuencia Cardíaca',
-          'Sat% y FR'
+          'PANI/PAI',
+          'FC',
+          'SpO2 y FR'
         ],
         isClinical: true,
         allowedEvents: [
@@ -896,6 +1040,26 @@ class SimulationState extends ChangeNotifier {
   void addMeasurement(String name) {
     _measurements.add(name);
     _saveSettings();
+    notifyListeners();
+  }
+
+  void reorderMeasurement(int oldIndex, int newIndex,
+      {bool useActiveList = true}) {
+    final target = useActiveList && _activeMeasurements.isNotEmpty
+        ? _activeMeasurements
+        : _measurements;
+
+    if (oldIndex < 0 || oldIndex >= target.length) return;
+    if (newIndex < 0) return;
+    if (newIndex > target.length) newIndex = target.length;
+    if (newIndex > oldIndex) newIndex -= 1;
+
+    final item = target.removeAt(oldIndex);
+    target.insert(newIndex, item);
+
+    if (identical(target, _measurements)) {
+      _saveSettings();
+    }
     notifyListeners();
   }
 
@@ -1034,38 +1198,38 @@ class SimulationState extends ChangeNotifier {
     }
   }
 
-  /// Converts current simulation state to a JSON format the MSI Monitor app expects.
-  /// Converts current simulation state to a JSON format the MSI Monitor app expects.
-  void _broadcastToMonitor() {
+  /// Envía al monitor el estado completo de todos los instrumentos visibles.
+  void _sendFullStateToMonitor() {
     if (!_isRunning) return;
     final List<Map<String, dynamic>> payload = [];
     for (var inst in enabledInstruments) {
       if (!inst.isVisibleOnMonitor) continue;
-      // YA NO SALTAMOS LOS MANUALES: se incluyen con sus valores transmitidos (_tx)
       _addInstrumentToPayload(inst, payload);
     }
     if (payload.isNotEmpty) {
       _telemetryService.updateMonitor(payload);
+    } else {
+      _telemetryService.updateMonitor([]);
     }
   }
 
   // Nuevo helper para añadir instrumento al payload
   void _addInstrumentToPayload(
       Instrument inst, List<Map<String, dynamic>> payload) {
-    if (inst.title == 'Frecuencia Cardíaca') {
+    if (inst.title == 'FC') {
       payload.add({
         "id": "hr_01",
         "type": "hr",
-        "label": "Heart Rate",
+        "label": "FC",
         "value": "$_txHr",
-        "unit": "bpm",
+        "unit": "LPM",
         "color": _hexFromColor(inst.textColor ?? const Color(0xFF22C55E)),
       });
-    } else if (inst.title == 'Sat% y FR') {
+    } else if (inst.title == 'SpO2 y FR') {
       payload.add({
         "id": "spo2_01",
         "type": "spo2",
-        "label": "Sat%",
+        "label": "SpO2",
         "value": "$_txSpo2",
         "unit": "%",
         "color": _hexFromColor(inst.textColor ?? const Color(0xFF3B82F6)),
@@ -1078,11 +1242,11 @@ class SimulationState extends ChangeNotifier {
         "unit": "rpm",
         "color": _hexFromColor(inst.textColor ?? const Color(0xFFEAB308)),
       });
-    } else if (inst.title == 'Tensión Arterial') {
+    } else if (inst.title == 'PANI/PAI') {
       payload.add({
         "id": "bp_01",
         "type": "bp",
-        "label": "Blood Pressure",
+        "label": "PANI/PAI",
         "value": "$_txSys/$_txDia",
         "unit": "mmHg",
         "color": _hexFromColor(inst.textColor ?? const Color(0xFFEF4444)),
@@ -1091,33 +1255,20 @@ class SimulationState extends ChangeNotifier {
       payload.add({
         "id": "temp_01",
         "type": "temp",
-        "label": "Temperature",
+        "label": "Temperatura",
         "value": _txTemp.toStringAsFixed(1),
         "unit": "°C",
         "color": _hexFromColor(inst.textColor ?? const Color(0xFF06B6D4)),
       });
-    } else if (inst.title == 'Glucómetro') {
+    } else if (inst.title == 'Glucemia') {
       payload.add({
         "id": "glu_01",
         "type": "glu",
-        "label": "Glucose",
+        "label": "Glucemia",
         "value": "$_txGlucose",
         "unit": "mg/dL",
         "color": _hexFromColor(inst.textColor ?? const Color(0xFFF97316)),
       });
-    }
-  }
-
-  // Nuevo método para enviar un solo instrumento al monitor
-  void _sendSingleInstrumentToMonitor(String instrumentTitle) {
-    if (!_isRunning) return;
-    final inst = _instruments.firstWhere((i) => i.title == instrumentTitle,
-        orElse: () => Instrument(title: '', icon: LucideIcons.box));
-    if (inst.title.isEmpty || !inst.isVisibleOnMonitor) return;
-    final List<Map<String, dynamic>> payload = [];
-    _addInstrumentToPayload(inst, payload);
-    if (payload.isNotEmpty) {
-      _telemetryService.updateMonitor(payload);
     }
   }
 
@@ -1127,6 +1278,11 @@ class SimulationState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _telemetryService.removeListener(_onTelemetryReady);
+    for (var timer in _pendingTransmissions.values) {
+      timer.cancel();
+    }
+    _pendingTransmissions.clear();
     _audioService.removeListener(notifyListeners);
     _audioService.dispose();
     _telemetryService.stop();

@@ -12,7 +12,7 @@ class HubScreen extends StatelessWidget {
   final VoidCallback? onFinished;
   const HubScreen({super.key, this.onFinished});
 
-  void _confirmStop(BuildContext context, SimulationState state) {
+  Future<void> _confirmStop(BuildContext context, SimulationState state) async {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -24,8 +24,8 @@ class HubScreen extends StatelessWidget {
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancelar')),
           ElevatedButton(
-            onPressed: () {
-              state.stopSimulation();
+            onPressed: () async {
+              await state.stopSimulation();
               Navigator.pop(context);
               if (onFinished != null) onFinished!();
             },
@@ -86,6 +86,8 @@ class HubScreen extends StatelessWidget {
               Row(
                 children: [
                   _ColumnSelector(current: state.hubColumns),
+                  const SizedBox(width: 12),
+                  const _MonitorThemeToggle(),
                 ],
               ),
             ],
@@ -157,23 +159,23 @@ class HubScreen extends StatelessWidget {
                     letterSpacing: -0.5)),
             const SizedBox(height: 32),
             _ActionCategoryTile(
-              title: 'Eventos Clínicos',
+              title: 'Estados',
               icon: LucideIcons.zap,
               color: const Color(0xFFD7E2FF),
               onTap: () {
                 Navigator.pop(context);
-                _showSubActions(context, state, 'Eventos', state.activeEvents);
+                _showSubActions(context, state, 'Estados', state.activeEvents);
               },
             ),
             const SizedBox(height: 16),
             _ActionCategoryTile(
-              title: 'Mediciones Manuales',
+              title: 'Checklist',
               icon: LucideIcons.gauge,
               color: const Color(0xFFBFD2FD),
               onTap: () {
                 Navigator.pop(context);
                 _showSubActions(
-                    context, state, 'Medición', state.activeMeasurements);
+                    context, state, 'Checklist', state.activeMeasurements);
               },
             ),
             const SizedBox(height: 24),
@@ -186,7 +188,8 @@ class HubScreen extends StatelessWidget {
   void _showSubActions(BuildContext context, SimulationState state,
       String category, List<dynamic> items) {
     final msiTheme = state.theme;
-    final isChecklist = category == 'Medición';
+    final isChecklist = category == 'Checklist';
+    final checklistItems = List<dynamic>.from(items);
 
     showModalBottomSheet(
       context: context,
@@ -228,96 +231,118 @@ class HubScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               Expanded(
-                child: ListView.builder(
-                  itemCount: items.length,
-                  itemBuilder: (context, index) {
-                    final item = items[index];
-                    final String title =
-                        item is ClinicalEvent ? item.title : item.toString();
-
-                    if (isChecklist) {
-                      final bool isDone =
-                          state.isMeasurementCompleted(item.toString());
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: msiTheme.card,
-                          borderRadius: BorderRadius.circular(20),
-                          border: Border.all(
-                              color: isDone
-                                  ? msiTheme.primary.withOpacity(0.3)
-                                  : msiTheme.text.withOpacity(0.05)),
-                        ),
-                        child: CheckboxListTile(
-                          value: isDone,
-                          contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 4),
-                          onChanged: (val) {
-                            state.toggleMeasurement(item.toString());
-                            setInternalState(() {});
-                          },
-                          activeColor: msiTheme.primary,
-                          checkColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20)),
-                          title: Text(title,
-                              style: GoogleFonts.manrope(
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                  color: isDone
-                                      ? msiTheme.primary
-                                      : msiTheme.text)),
-                          secondary: Icon(
-                            isDone
-                                ? LucideIcons.checkCircle2
-                                : LucideIcons.circle,
-                            color: isDone
-                                ? msiTheme.primary
-                                : msiTheme.text.withOpacity(0.2),
-                            size: 20,
-                          ),
-                        ),
-                      );
-                    }
-
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: msiTheme.card,
-                        borderRadius: BorderRadius.circular(20),
-                        border:
-                            Border.all(color: msiTheme.text.withOpacity(0.05)),
-                      ),
-                      child: ListTile(
-                        onTap: () {
-                          if (item is ClinicalEvent) {
-                            state.recordEvent(item);
-                          } else {
-                            state.recordAction(category, item.toString());
-                          }
-                          Navigator.pop(context);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('$title registrado con éxito'),
-                              duration: const Duration(seconds: 2),
-                              behavior: SnackBarBehavior.floating,
-                              backgroundColor: msiTheme.primary,
+                child: isChecklist
+                    ? ReorderableListView.builder(
+                        shrinkWrap: true,
+                        physics: const ClampingScrollPhysics(),
+                        itemCount: checklistItems.length,
+                        onReorder: (oldIndex, newIndex) {
+                          final adjustedNewIndex =
+                              newIndex > oldIndex ? newIndex - 1 : newIndex;
+                          setInternalState(() {
+                            final item = checklistItems.removeAt(oldIndex);
+                            checklistItems.insert(adjustedNewIndex, item);
+                          });
+                          state.reorderMeasurement(oldIndex, newIndex);
+                        },
+                        itemBuilder: (context, index) {
+                          final item = checklistItems[index];
+                          final String title = item.toString();
+                          final bool isDone =
+                              state.isMeasurementCompleted(title);
+                          return Container(
+                            key: ValueKey(title),
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: msiTheme.card,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isDone
+                                    ? msiTheme.primary.withOpacity(0.3)
+                                    : msiTheme.text.withOpacity(0.05),
+                              ),
+                            ),
+                            child: CheckboxListTile(
+                              value: isDone,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 4),
+                              onChanged: (val) {
+                                state.toggleMeasurement(title);
+                                setInternalState(() {});
+                              },
+                              activeColor: msiTheme.primary,
+                              checkColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(20)),
+                              secondary: Icon(
+                                isDone
+                                    ? LucideIcons.checkCircle2
+                                    : LucideIcons.circle,
+                                color: isDone
+                                    ? msiTheme.primary
+                                    : msiTheme.text.withOpacity(0.2),
+                                size: 20,
+                              ),
+                              title: Text(
+                                title,
+                                style: GoogleFonts.manrope(
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                    color: isDone
+                                        ? msiTheme.primary
+                                        : msiTheme.text),
+                              ),
                             ),
                           );
                         },
-                        leading: Icon(LucideIcons.checkCircle2,
-                            color: msiTheme.primary, size: 20),
-                        title: Text(title,
-                            style: GoogleFonts.manrope(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 14,
-                                color: msiTheme.text)),
-                        trailing:
-                            const Icon(LucideIcons.chevronRight, size: 16),
+                      )
+                    : ListView.builder(
+                        itemCount: items.length,
+                        itemBuilder: (context, index) {
+                          final item = items[index];
+                          final String title = item is ClinicalEvent
+                              ? item.title
+                              : item.toString();
+
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 12),
+                            decoration: BoxDecoration(
+                              color: msiTheme.card,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                  color: msiTheme.text.withOpacity(0.05)),
+                            ),
+                            child: ListTile(
+                              onTap: () {
+                                if (item is ClinicalEvent) {
+                                  state.recordEvent(item);
+                                } else {
+                                  state.recordAction(category, item.toString());
+                                }
+                                Navigator.pop(context);
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content:
+                                        Text('$title registrado con éxito'),
+                                    duration: const Duration(seconds: 2),
+                                    behavior: SnackBarBehavior.floating,
+                                    backgroundColor: msiTheme.primary,
+                                  ),
+                                );
+                              },
+                              leading: Icon(LucideIcons.checkCircle2,
+                                  color: msiTheme.primary, size: 20),
+                              title: Text(title,
+                                  style: GoogleFonts.manrope(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14,
+                                      color: msiTheme.text)),
+                              trailing: const Icon(LucideIcons.chevronRight,
+                                  size: 16),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  },
-                ),
               ),
             ],
           ),
@@ -618,11 +643,11 @@ class HubCell extends StatelessWidget {
 
   void _showManualInput(BuildContext context, SimulationState state,
       String vitalKey, String title) {
-    if (title == 'Tensión Arterial') {
+    if (title == 'PANI/PAI') {
       _showBPManualInput(context, state);
       return;
     }
-    if (title == 'Sat% y FR') {
+    if (title == 'SpO2 y FR') {
       _showGasesManualInput(context, state);
       return;
     }
@@ -666,7 +691,7 @@ class HubCell extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: msiTheme.background,
-        title: Text('Ajustar Sat% y FR',
+        title: Text('Ajustar SpO2 y FR',
             style: GoogleFonts.manrope(
                 fontWeight: FontWeight.w900, color: msiTheme.primary)),
         content: Column(
@@ -741,7 +766,7 @@ class HubCell extends StatelessWidget {
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: msiTheme.background,
-        title: Text('Ajustar Tensión Arterial',
+        title: Text('Ajustar PANI/PAI',
             style: GoogleFonts.manrope(
                 fontWeight: FontWeight.w900, color: msiTheme.primary)),
         content: Column(
@@ -822,28 +847,28 @@ class HubCell extends StatelessWidget {
     String vitalKey = '';
     double step = 1;
 
-    if (title == 'Frecuencia Cardíaca') {
+    if (title == 'FC') {
       val = '${state.hr}';
-      unit = 'BPM';
+      unit = 'LPM';
       vitalKey = 'hr';
-    } else if (title == 'Sat% y FR') {
+    } else if (title == 'SpO2 y FR') {
       val = '${state.spo2}%';
-      unit = 'Sat/FR';
+      unit = 'SpO2/FR';
       vitalKey = 'spo2';
     } else if (title == 'Temperatura' || title == 'Termómetro') {
       val = '${state.temp.toStringAsFixed(1)}°C';
-      unit = 'TEMP';
+      unit = '';
       vitalKey = 'temp';
       step = 0.1;
-    } else if (title == 'Glucosa en Sangre' || title == 'Glucómetro') {
+    } else if (title == 'Glucemia') {
       val = '${state.glucose}';
       unit = 'mg/dL';
       vitalKey = 'glucose';
-    } else if (title == 'Tensión Arterial') {
+    } else if (title == 'PANI/PAI') {
       val = '${state.sys}/${state.dia}';
       unit = 'mmHg';
       vitalKey = 'sys';
-    } else if (title == 'Voz') {
+    } else if (title == 'Ruidos Vocales') {
       val = 'Pista 1';
       unit = 'IZQ';
     } else if (title == 'Estetoscopio') {
@@ -851,11 +876,16 @@ class HubCell extends StatelessWidget {
       unit = 'DER';
     }
 
-    if (title == 'Voz') {
+    if (title == 'Ruidos Vocales') {
       return _VoiceModuleCell(instrument: instrument, scale: scale);
     }
     if (title == 'Estetoscopio') {
       return _StethoscopeModuleCell(instrument: instrument, scale: scale);
+    }
+
+    if (title == 'SpO2 y FR') {
+      return _buildSpO2FRCell(
+          context, state, msiTheme, scale, isCollapsed, icon);
     }
 
     return AnimatedContainer(
@@ -875,132 +905,7 @@ class HubCell extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Column(
         children: [
-          GestureDetector(
-            onTap: () => state.toggleCollapse(title),
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                  horizontal: 16 * scale, vertical: 14 * scale),
-              color: msiTheme.primary.withOpacity(0.03),
-              child: Row(
-                children: [
-                  Icon(icon,
-                      color: instrument.textColor ?? msiTheme.primary,
-                      size: 20 * scale),
-                  SizedBox(width: 10 * scale),
-                  Expanded(
-                    child: Text(
-                      isCollapsed ? title.toUpperCase() : unit,
-                      style: GoogleFonts.manrope(
-                        fontSize: 11 * scale,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 0.5,
-                        color: (instrument.textColor ?? msiTheme.primary)
-                            .withOpacity(isCollapsed ? 0.9 : 0.5),
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      // Botón de visibilidad en el monitor (ojo)
-                      GestureDetector(
-                        onTap: () => state.toggleVisibilityOnMonitor(title),
-                        child: Container(
-                          padding: EdgeInsets.all(8 * scale),
-                          decoration: BoxDecoration(
-                            color: instrument.isVisibleOnMonitor
-                                ? Colors.blue.withOpacity(0.1)
-                                : Colors.grey.withOpacity(0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            instrument.isVisibleOnMonitor
-                                ? LucideIcons.eye
-                                : LucideIcons.eyeOff,
-                            size: 14 * scale,
-                            color: instrument.isVisibleOnMonitor
-                                ? Colors.blue
-                                : Colors.grey,
-                          ),
-                        ),
-                      ),
-                      // Botón SYNC si está en modo manual y tiene cambios pendientes
-                      if (instrument.isManualTransmission &&
-                          instrument.hasPendingSync)
-                        GestureDetector(
-                          onTap: () => state.syncInstrument(title),
-                          child: Container(
-                            margin: EdgeInsets.only(right: 8 * scale),
-                            padding: EdgeInsets.symmetric(
-                                horizontal: 10 * scale, vertical: 6 * scale),
-                            decoration: BoxDecoration(
-                              color: Colors.red,
-                              borderRadius: BorderRadius.circular(12 * scale),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.red.withOpacity(0.3),
-                                  blurRadius: 8 * scale,
-                                  offset: Offset(0, 2 * scale),
-                                ),
-                              ],
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(LucideIcons.send,
-                                    color: Colors.white, size: 12 * scale),
-                                if (scale > 0.6) ...[
-                                  SizedBox(width: 4 * scale),
-                                  Text(
-                                    'SYNC',
-                                    style: GoogleFonts.manrope(
-                                      fontSize: 8 * scale,
-                                      fontWeight: FontWeight.w900,
-                                      color: Colors.white,
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                ],
-                              ],
-                            ),
-                          ),
-                        ),
-                      // Botón de modo manual/automático
-                      GestureDetector(
-                        onTap: () => state.toggleTransmissionMode(title),
-                        child: Container(
-                          padding: EdgeInsets.all(8 * scale),
-                          decoration: BoxDecoration(
-                            color: instrument.isManualTransmission
-                                ? Colors.orange.withOpacity(0.1)
-                                : Colors.green.withOpacity(0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            instrument.isManualTransmission
-                                ? LucideIcons.hand
-                                : LucideIcons.zap,
-                            size: 14 * scale,
-                            color: instrument.isManualTransmission
-                                ? Colors.orange
-                                : Colors.green,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  SizedBox(width: 8 * scale),
-                  Icon(
-                    isCollapsed
-                        ? LucideIcons.chevronDown
-                        : LucideIcons.chevronUp,
-                    size: 16 * scale,
-                    color: msiTheme.primary.withOpacity(0.3),
-                  ),
-                ],
-              ),
-            ),
-          ),
+          _buildHeader(state, title, icon, msiTheme, scale, isCollapsed),
           if (!isCollapsed) ...[
             Padding(
               padding: EdgeInsets.fromLTRB(
@@ -1033,15 +938,15 @@ class HubCell extends StatelessWidget {
                               height: 1.1,
                             ),
                           ),
-                          if (title == 'Sat% y FR')
+                          if (unit.isNotEmpty)
                             Text(
-                              '${state.co2} FR',
+                              unit,
                               style: GoogleFonts.manrope(
-                                fontSize: 24 * scale,
+                                fontSize: 16 * scale,
                                 fontWeight: FontWeight.w800,
                                 color:
                                     (instrument.textColor ?? msiTheme.primary)
-                                        .withOpacity(0.6),
+                                        .withOpacity(0.7),
                               ),
                             ),
                         ],
@@ -1049,28 +954,7 @@ class HubCell extends StatelessWidget {
                     ),
                   ),
                   SizedBox(height: 16 * scale),
-                  if (title == 'Sat% y FR')
-                    Column(
-                      children: [
-                        _AdjustRow(
-                            label: 'Sat',
-                            value: state.spo2,
-                            scale: scale,
-                            onPlus: () =>
-                                state.setVital('spo2', state.spo2 + 1),
-                            onMinus: () =>
-                                state.setVital('spo2', state.spo2 - 1)),
-                        SizedBox(height: 12 * scale),
-                        _AdjustRow(
-                            label: 'FR',
-                            value: state.co2,
-                            scale: scale,
-                            onPlus: () => state.setVital('co2', state.co2 + 1),
-                            onMinus: () =>
-                                state.setVital('co2', state.co2 - 1)),
-                      ],
-                    )
-                  else if (title == 'Tensión Arterial')
+                  if (title == 'PANI/PAI')
                     Column(
                       children: [
                         _AdjustRow(
@@ -1123,6 +1007,288 @@ class HubCell extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(SimulationState state, String title, IconData icon,
+      MSITheme msiTheme, double scale, bool isCollapsed) {
+    final instrument = this.instrument;
+    return GestureDetector(
+      onTap: () => state.toggleCollapse(title),
+      child: Container(
+        padding:
+            EdgeInsets.symmetric(horizontal: 16 * scale, vertical: 14 * scale),
+        color: msiTheme.primary.withOpacity(0.03),
+        child: Row(
+          children: [
+            Icon(icon,
+                color: instrument.textColor ?? msiTheme.primary,
+                size: 20 * scale),
+            SizedBox(width: 10 * scale),
+            Expanded(
+              child: Text(
+                isCollapsed ? title.toUpperCase() : '',
+                style: GoogleFonts.manrope(
+                  fontSize: 11 * scale,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.5,
+                  color: (instrument.textColor ?? msiTheme.primary)
+                      .withOpacity(isCollapsed ? 0.9 : 0.5),
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _DelayButton(
+                  instrument: instrument,
+                  state: state,
+                  scale: scale,
+                ),
+                if (instrument.isManualTransmission &&
+                    instrument.hasPendingSync)
+                  GestureDetector(
+                    onTap: () => state.syncInstrument(title),
+                    child: Container(
+                      margin: EdgeInsets.only(right: 8 * scale),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 10 * scale, vertical: 6 * scale),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(12 * scale),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.red.withOpacity(0.3),
+                            blurRadius: 8 * scale,
+                            offset: Offset(0, 2 * scale),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(LucideIcons.send,
+                              color: Colors.white, size: 12 * scale),
+                          if (scale > 0.6) ...[
+                            SizedBox(width: 4 * scale),
+                            Text(
+                              'SYNC',
+                              style: GoogleFonts.manrope(
+                                fontSize: 8 * scale,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 0.5,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ),
+                GestureDetector(
+                  onTap: () => state.toggleVisibilityOnMonitor(title),
+                  child: Container(
+                    padding: EdgeInsets.all(8 * scale),
+                    decoration: BoxDecoration(
+                      color: instrument.isVisibleOnMonitor
+                          ? Colors.blue.withOpacity(0.1)
+                          : Colors.grey.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      instrument.isVisibleOnMonitor
+                          ? LucideIcons.eye
+                          : LucideIcons.eyeOff,
+                      size: 14 * scale,
+                      color: instrument.isVisibleOnMonitor
+                          ? Colors.blue
+                          : Colors.grey,
+                    ),
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => state.toggleTransmissionMode(title),
+                  child: Container(
+                    padding: EdgeInsets.all(8 * scale),
+                    decoration: BoxDecoration(
+                      color: instrument.isManualTransmission
+                          ? Colors.orange.withOpacity(0.1)
+                          : Colors.green.withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      instrument.isManualTransmission
+                          ? LucideIcons.hand
+                          : LucideIcons.zap,
+                      size: 14 * scale,
+                      color: instrument.isManualTransmission
+                          ? Colors.orange
+                          : Colors.green,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            SizedBox(width: 8 * scale),
+            Icon(
+              isCollapsed ? LucideIcons.chevronDown : LucideIcons.chevronUp,
+              size: 16 * scale,
+              color: msiTheme.primary.withOpacity(0.3),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSpO2FRCell(BuildContext context, SimulationState state,
+      MSITheme msiTheme, double scale, bool isCollapsed, IconData icon) {
+    final instrument = this.instrument;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      decoration: BoxDecoration(
+        color: msiTheme.card,
+        borderRadius: BorderRadius.circular(28 * scale),
+        border: Border.all(color: msiTheme.text.withOpacity(0.05)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 16 * scale,
+            offset: Offset(0, 6 * scale),
+          )
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          _buildHeader(
+              state, instrument.title, icon, msiTheme, scale, isCollapsed),
+          if (!isCollapsed)
+            Padding(
+              padding: EdgeInsets.fromLTRB(
+                  20 * scale, 12 * scale, 20 * scale, 20 * scale),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Text(
+                          'SpO2',
+                          style: GoogleFonts.manrope(
+                            fontSize: 11 * scale,
+                            fontWeight: FontWeight.w900,
+                            color: msiTheme.text.withOpacity(0.4),
+                          ),
+                        ),
+                        SizedBox(height: 4 * scale),
+                        GestureDetector(
+                          onTap: () => _showManualInput(
+                              context, state, 'spo2', instrument.title),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              '${state.spo2}',
+                              style: GoogleFonts.manrope(
+                                fontSize: 42 * scale,
+                                fontWeight: FontWeight.w900,
+                                color: instrument.textColor ?? msiTheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '%',
+                          style: GoogleFonts.manrope(
+                            fontSize: 14 * scale,
+                            fontWeight: FontWeight.w800,
+                            color: (instrument.textColor ?? msiTheme.primary)
+                                .withOpacity(0.8),
+                          ),
+                        ),
+                        SizedBox(height: 12 * scale),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _MiniAdjustBtn(
+                              icon: LucideIcons.minus,
+                              scale: scale,
+                              onTap: () =>
+                                  state.setVital('spo2', state.spo2 - 1),
+                            ),
+                            SizedBox(width: 20 * scale),
+                            _MiniAdjustBtn(
+                              icon: LucideIcons.plus,
+                              scale: scale,
+                              onTap: () =>
+                                  state.setVital('spo2', state.spo2 + 1),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  SizedBox(width: 16 * scale),
+                  Expanded(
+                    child: Column(
+                      children: [
+                        Text(
+                          'FR',
+                          style: GoogleFonts.manrope(
+                            fontSize: 11 * scale,
+                            fontWeight: FontWeight.w900,
+                            color: msiTheme.text.withOpacity(0.4),
+                          ),
+                        ),
+                        SizedBox(height: 4 * scale),
+                        GestureDetector(
+                          onTap: () => _showManualInput(
+                              context, state, 'co2', instrument.title),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              '${state.co2}',
+                              style: GoogleFonts.manrope(
+                                fontSize: 42 * scale,
+                                fontWeight: FontWeight.w900,
+                                color: instrument.textColor ?? msiTheme.primary,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Text(
+                          'rpm',
+                          style: GoogleFonts.manrope(
+                            fontSize: 14 * scale,
+                            fontWeight: FontWeight.w800,
+                            color: (instrument.textColor ?? msiTheme.primary)
+                                .withOpacity(0.8),
+                          ),
+                        ),
+                        SizedBox(height: 12 * scale),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            _MiniAdjustBtn(
+                              icon: LucideIcons.minus,
+                              scale: scale,
+                              onTap: () => state.setVital('co2', state.co2 - 1),
+                            ),
+                            SizedBox(width: 20 * scale),
+                            _MiniAdjustBtn(
+                              icon: LucideIcons.plus,
+                              scale: scale,
+                              onTap: () => state.setVital('co2', state.co2 + 1),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -1182,6 +1348,67 @@ class _MiniAdjustBtn extends StatelessWidget {
             color: theme.accent.withOpacity(0.5),
             borderRadius: BorderRadius.circular(12 * scale)),
         child: Icon(icon, size: 22 * scale, color: theme.primary),
+      ),
+    );
+  }
+}
+
+class _DelayButton extends StatelessWidget {
+  final Instrument instrument;
+  final SimulationState state;
+  final double scale;
+
+  const _DelayButton(
+      {required this.instrument, required this.state, required this.scale});
+
+  String _getDelayLabel(int ms) {
+    switch (ms) {
+      case 0:
+        return '0s';
+      case 5000:
+        return '5s';
+      case 10000:
+        return '10s';
+      case 15000:
+        return '15s';
+      default:
+        return '0s';
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<SimulationState>().theme;
+    return Container(
+      margin: EdgeInsets.only(right: 8 * scale),
+      child: PopupMenuButton<int>(
+        offset: Offset(0, 30 * scale),
+        tooltip: 'Retardo de envío',
+        onSelected: (int delayMs) {
+          state.setInstrumentDelay(instrument.title, delayMs);
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem(value: 0, child: Text('Instantáneo (0s)')),
+          PopupMenuItem(value: 5000, child: Text('5 segundos')),
+          PopupMenuItem(value: 10000, child: Text('10 segundos')),
+          PopupMenuItem(value: 15000, child: Text('15 segundos')),
+        ],
+        child: Container(
+          padding:
+              EdgeInsets.symmetric(horizontal: 6 * scale, vertical: 4 * scale),
+          decoration: BoxDecoration(
+            color: theme.primary.withOpacity(0.8),
+            borderRadius: BorderRadius.circular(8 * scale),
+          ),
+          child: Text(
+            _getDelayLabel(instrument.transmissionDelayMs),
+            style: GoogleFonts.manrope(
+              fontSize: 9 * scale,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1249,7 +1476,7 @@ void _showVolumeMenu(BuildContext context, SimulationState state, bool isLeft) {
         children: [
           Text(
               isLeft
-                  ? 'Volumen Canal Izquierdo (Voz)'
+                  ? 'Volumen Canal Izquierdo (Ruidos Vocales)'
                   : 'Volumen Canal Derecho (Estetoscopio)',
               style: GoogleFonts.manrope(
                   fontWeight: FontWeight.w900, fontSize: 16)),
@@ -1281,6 +1508,49 @@ void _showVolumeMenu(BuildContext context, SimulationState state, bool isLeft) {
       ),
     ),
   );
+}
+
+class _MonitorThemeToggle extends StatelessWidget {
+  const _MonitorThemeToggle({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final telemetry = TelemetryService();
+    final state = context.watch<SimulationState>();
+    final msiTheme = state.theme;
+
+    return ListenableBuilder(
+      listenable: telemetry,
+      builder: (context, _) {
+        final isConnected = telemetry.isConnected;
+        final isDark = state.monitorThemeDark;
+
+        return GestureDetector(
+          onTap: isConnected
+              ? () async {
+                  final newValue = !isDark;
+                  await telemetry.setMonitorTheme(newValue);
+                  state.setMonitorThemeDark(newValue);
+                }
+              : null,
+          child: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: isConnected
+                  ? msiTheme.primary.withOpacity(0.1)
+                  : Colors.grey.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              isDark ? LucideIcons.moon : LucideIcons.sun,
+              size: 18,
+              color: isConnected ? msiTheme.primary : Colors.grey,
+            ),
+          ),
+        );
+      },
+    );
+  }
 }
 
 class _ColumnSelector extends StatelessWidget {
@@ -1366,7 +1636,10 @@ class _VoiceModuleCell extends StatelessWidget {
                       size: 20 * scale),
                   SizedBox(width: 10 * scale),
                   Expanded(
-                      child: Text(isCollapsed ? 'VOZ' : 'VOZ (IZQ)',
+                      child: Text(
+                          isCollapsed
+                              ? 'RUIDOS VOCALES'
+                              : 'RUIDOS VOCALES (IZQ)',
                           style: GoogleFonts.manrope(
                               fontSize: 11 * scale,
                               fontWeight: FontWeight.w900,

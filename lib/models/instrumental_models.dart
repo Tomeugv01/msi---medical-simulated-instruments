@@ -9,6 +9,7 @@ class Instrument {
   bool isManualTransmission;
   bool hasPendingSync;
   bool isVisibleOnMonitor;
+  int transmissionDelayMs;
 
   Instrument({
     required this.title,
@@ -18,6 +19,7 @@ class Instrument {
     this.isManualTransmission = true, // AHORA MANUAL POR DEFECTO
     this.hasPendingSync = false,
     this.isVisibleOnMonitor = true,
+    this.transmissionDelayMs = 0,
   });
 }
 
@@ -26,6 +28,15 @@ class ClinicalEvent {
   final Map<String, double> healthEffects;
 
   ClinicalEvent({required this.title, this.healthEffects = const {}});
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is ClinicalEvent && other.title == title;
+  }
+
+  @override
+  int get hashCode => title.hashCode;
 
   Map<String, dynamic> toJson() => {
         'title': title,
@@ -105,6 +116,18 @@ final Map<String, IconData> iconMap = {
   'volume2': LucideIcons.volume2,
   'gauge': LucideIcons.gauge,
   'wind': LucideIcons.wind,
+  'heart': LucideIcons.heart,
+  'brain': LucideIcons.brain,
+  'bone': LucideIcons.bone,
+  'syringe': LucideIcons.syringe,
+  'pill': LucideIcons.pill,
+  'lungs': LucideIcons.airVent,
+  'microscope': LucideIcons.microscope,
+  'bandage': LucideIcons.cross,
+  'ambulance': LucideIcons.siren,
+  'hospital': LucideIcons.building2,
+  'dna': LucideIcons.dna,
+  'testTube': LucideIcons.testTube,
 };
 
 class MSITheme {

@@ -56,9 +56,14 @@ class ModalShell extends StatelessWidget {
 }
 
 /// [ConfigModal] allows global configuration of instruments, themes, and BLE hardware.
-class ConfigModal extends StatelessWidget {
+class ConfigModal extends StatefulWidget {
   const ConfigModal({super.key});
 
+  @override
+  State<ConfigModal> createState() => _ConfigModalState();
+}
+
+class _ConfigModalState extends State<ConfigModal> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<SimulationState>();
@@ -75,10 +80,9 @@ class ConfigModal extends StatelessWidget {
           const SizedBox(height: 24),
           const BluetoothShortCard(),
           const SizedBox(height: 24),
-          const ActionManagerCard(type: 'events', title: 'Eventos Clínicos'),
+          const ActionManagerCard(type: 'events', title: 'Estados'),
           const SizedBox(height: 16),
-          const ActionManagerCard(
-              type: 'measurements', title: 'Mediciones Manuales'),
+          const ActionManagerCard(type: 'measurements', title: 'Checklist'),
           const SizedBox(height: 24),
           const NotesBox(),
           const SizedBox(height: 48),
@@ -416,7 +420,7 @@ class _EditPresetModalState extends State<EditPresetModal> {
 
                 _CompactActionSelector(
                   key: const ValueKey('compact_events'),
-                  title: 'EVENTOS CLÍNICOS',
+                  title: 'ESTADOS',
                   icon: LucideIcons.zap,
                   allOptions: state.events,
                   selectedOptions: _selectedEvents,
@@ -426,7 +430,7 @@ class _EditPresetModalState extends State<EditPresetModal> {
 
                 _CompactActionSelector(
                   key: const ValueKey('compact_measurements'),
-                  title: 'MEDICIONES MANUALES',
+                  title: 'CHECKLIST',
                   icon: LucideIcons.gauge,
                   allOptions: state.measurements,
                   selectedOptions: _selectedMeasurements,
@@ -818,7 +822,7 @@ class _NotesBoxState extends State<NotesBox> {
           onChanged: (v) => state.setSessionInfo(supervisor: v),
           controller: _supController,
           decoration: InputDecoration(
-            labelText: 'SUPERVISOR',
+            labelText: 'PROFESOR',
             labelStyle: GoogleFonts.manrope(
                 fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1),
             filled: true,
@@ -958,44 +962,88 @@ class ActionListManager extends StatelessWidget {
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: theme.text.withOpacity(0.05)),
           ),
-          child: Column(
-            children: items.asMap().entries.map((entry) {
-              final index = entry.key;
-              final item = entry.value;
-              final String displayTitle =
-                  item is ClinicalEvent ? item.title : item.toString();
+          child: type == 'measurements'
+              ? ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const ClampingScrollPhysics(),
+                  itemCount: items.length,
+                  onReorder: (oldIndex, newIndex) {
+                    state.reorderMeasurement(oldIndex, newIndex,
+                        useActiveList: false);
+                  },
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final String displayTitle = item.toString();
 
-              return ListTile(
-                title: Text(displayTitle,
-                    style: GoogleFonts.manrope(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: theme.text)),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: const Icon(LucideIcons.edit3,
-                          size: 16, color: Colors.grey),
-                      onPressed: () => _showAddDialog(context, state,
-                          index: index, initialValue: item),
-                    ),
-                    IconButton(
-                      icon: const Icon(LucideIcons.trash2,
-                          size: 16, color: Colors.grey),
-                      onPressed: () {
-                        if (type == 'events') {
-                          state.deleteEvent(index);
-                        } else {
-                          state.deleteMeasurement(index);
-                        }
-                      },
-                    ),
-                  ],
+                    return Container(
+                      key: ValueKey(displayTitle),
+                      child: ListTile(
+                        leading: ReorderableDragStartListener(
+                          index: index,
+                          child: const Icon(LucideIcons.gripVertical,
+                              size: 18, color: Colors.grey),
+                        ),
+                        title: Text(displayTitle,
+                            style: GoogleFonts.manrope(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: theme.text)),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: const Icon(LucideIcons.edit3,
+                                  size: 16, color: Colors.grey),
+                              onPressed: () => _showAddDialog(context, state,
+                                  index: index, initialValue: item),
+                            ),
+                            IconButton(
+                              icon: const Icon(LucideIcons.trash2,
+                                  size: 16, color: Colors.grey),
+                              onPressed: () {
+                                state.deleteMeasurement(index);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                )
+              : Column(
+                  children: items.asMap().entries.map((entry) {
+                    final index = entry.key;
+                    final item = entry.value;
+                    final String displayTitle =
+                        item is ClinicalEvent ? item.title : item.toString();
+
+                    return ListTile(
+                      title: Text(displayTitle,
+                          style: GoogleFonts.manrope(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              color: theme.text)),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            icon: const Icon(LucideIcons.edit3,
+                                size: 16, color: Colors.grey),
+                            onPressed: () => _showAddDialog(context, state,
+                                index: index, initialValue: item),
+                          ),
+                          IconButton(
+                            icon: const Icon(LucideIcons.trash2,
+                                size: 16, color: Colors.grey),
+                            onPressed: () {
+                              state.deleteEvent(index);
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
                 ),
-              );
-            }).toList(),
-          ),
         ),
       ],
     );
@@ -1047,7 +1095,8 @@ class ActionListManager extends StatelessWidget {
                           letterSpacing: 1,
                           color: theme.primary)),
                   const SizedBox(height: 12),
-                  ..._buildEffectPickers(theme, healthEffects, setDialogState),
+                  ..._buildEditableEffectPickers(
+                      context, theme, healthEffects, setDialogState),
                 ],
               ],
             ),
@@ -1087,10 +1136,10 @@ class ActionListManager extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildEffectPickers(
-      MSITheme theme, Map<String, double> effects, StateSetter setDialogState) {
+  List<Widget> _buildEditableEffectPickers(BuildContext context, MSITheme theme,
+      Map<String, double> effects, StateSetter setDialogState) {
     final vits = [
-      {'key': 'hr', 'label': 'FC (BPM)'},
+      {'key': 'hr', 'label': 'FC (LPM)'},
       {'key': 'spo2', 'label': 'SpO2 (%)'},
       {'key': 'co2', 'label': 'FR (rpm)'},
       {'key': 'temp', 'label': 'Temp (°C)'},
@@ -1101,7 +1150,17 @@ class ActionListManager extends StatelessWidget {
     return vits.map((v) {
       final key = v['key']!;
       final label = v['label']!;
-      final value = effects[key] ?? 0.0;
+      final double value = (effects[key] ?? 0.0).toDouble();
+      final bool isTemp = key == 'temp';
+
+      String formatValue(double input) {
+        final normalized = input == -0.0 ? 0.0 : input;
+        final isWhole = normalized == normalized.roundToDouble();
+        if (normalized > 0) {
+          return '+${normalized.toStringAsFixed(isTemp ? 1 : (isWhole ? 0 : 1))}';
+        }
+        return normalized.toStringAsFixed(isTemp ? 1 : (isWhole ? 0 : 1));
+      }
 
       return Padding(
         padding: const EdgeInsets.only(bottom: 8),
@@ -1114,31 +1173,105 @@ class ActionListManager extends StatelessWidget {
             IconButton(
               icon: const Icon(LucideIcons.minusCircle, size: 20),
               onPressed: () => setDialogState(
-                  () => effects[key] = value - (key == 'temp' ? 0.1 : 1.0)),
+                  () => effects[key] = value - (isTemp ? 0.1 : 1.0)),
             ),
-            SizedBox(
-              width: 50,
-              child: Text(
-                value > 0
-                    ? '+$value'
-                    : value.toStringAsFixed(key == 'temp' ? 1 : 0),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: value == 0
-                        ? Colors.grey
-                        : (value > 0 ? Colors.green : Colors.red)),
+            GestureDetector(
+              onTap: () => _showNumberEditDialog(
+                context,
+                theme,
+                label,
+                value,
+                (newValue) {
+                  setDialogState(() {
+                    effects[key] = newValue;
+                  });
+                },
+                decimal: isTemp,
+              ),
+              child: Container(
+                width: 72,
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
+                decoration: BoxDecoration(
+                  color: theme.card,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: theme.primary.withOpacity(0.3)),
+                ),
+                child: Text(
+                  formatValue(value),
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.manrope(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                      color: value == 0
+                          ? Colors.grey
+                          : (value > 0 ? Colors.green : Colors.red)),
+                ),
               ),
             ),
             IconButton(
               icon: const Icon(LucideIcons.plusCircle, size: 20),
               onPressed: () => setDialogState(
-                  () => effects[key] = value + (key == 'temp' ? 0.1 : 1.0)),
+                  () => effects[key] = value + (isTemp ? 0.1 : 1.0)),
             ),
           ],
         ),
       );
     }).toList();
+  }
+
+  void _showNumberEditDialog(
+    BuildContext context,
+    MSITheme theme,
+    String label,
+    double currentValue,
+    ValueChanged<double> onChanged, {
+    required bool decimal,
+  }) {
+    final controller = TextEditingController(
+      text: currentValue == 0 ? '' : currentValue.toString(),
+    );
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: theme.background,
+        title: Text('Editar valor',
+            style: GoogleFonts.manrope(
+                fontWeight: FontWeight.w900, color: theme.text)),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          keyboardType:
+              TextInputType.numberWithOptions(decimal: decimal, signed: true),
+          decoration: InputDecoration(
+            labelText: label,
+            filled: true,
+            fillColor: theme.card,
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide.none),
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar')),
+          ElevatedButton(
+            onPressed: () {
+              final newValue =
+                  double.tryParse(controller.text.replaceAll(',', '.'));
+              if (newValue != null) {
+                onChanged(newValue);
+              }
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: theme.primary, foregroundColor: Colors.white),
+            child: const Text('Guardar'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -1147,7 +1280,7 @@ class _CompactActionSelector extends StatelessWidget {
   final IconData icon;
   final List<dynamic> allOptions;
   final List<dynamic> selectedOptions;
-  final Function(List<dynamic>) onChanged;
+  final ValueChanged<List<dynamic>> onChanged;
 
   const _CompactActionSelector({
     super.key,
@@ -1198,6 +1331,8 @@ class _CompactActionSelector extends StatelessWidget {
   }
 
   void _showSelectionDialog(BuildContext context, MSITheme msiTheme) {
+    final localSelected = List<dynamic>.from(selectedOptions);
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1242,12 +1377,10 @@ class _CompactActionSelector extends StatelessWidget {
                     final item = allOptions[index];
                     final String title =
                         item is ClinicalEvent ? item.title : item.toString();
-                    final isSelected = selectedOptions.any((selected) {
-                      if (item is ClinicalEvent && selected is ClinicalEvent) {
-                        return item.title == selected.title;
-                      }
-                      return item == selected;
-                    });
+                    final isSelected = localSelected.any((selected) =>
+                        item is ClinicalEvent && selected is ClinicalEvent
+                            ? item == selected
+                            : item == selected);
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
@@ -1264,18 +1397,21 @@ class _CompactActionSelector extends StatelessWidget {
                       child: CheckboxListTile(
                         value: isSelected,
                         onChanged: (val) {
-                          List<dynamic> newList = List.from(selectedOptions);
+                          final newList = List<dynamic>.from(localSelected);
                           if (val == true) {
                             newList.add(item);
                           } else {
                             newList.removeWhere((selected) {
                               if (item is ClinicalEvent &&
                                   selected is ClinicalEvent) {
-                                return item.title == selected.title;
+                                return item == selected;
                               }
                               return item == selected;
                             });
                           }
+                          localSelected
+                            ..clear()
+                            ..addAll(newList);
                           onChanged(newList);
                           setModalState(() {});
                         },

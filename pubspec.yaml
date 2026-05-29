@@ -22,6 +22,7 @@ dependencies:
   flutter_sound: ^9.4.7
   sound_stream:
     path: plugins/sound_stream
+  reorderables: ^0.6.0
 
 dev_dependencies:
   flutter_test:
