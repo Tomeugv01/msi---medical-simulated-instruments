@@ -51,7 +51,7 @@ class HubScreen extends StatelessWidget {
           ElevatedButton.icon(
             onPressed: () => _showActionsMenu(context, state),
             icon: const Icon(LucideIcons.plusCircle, size: 18),
-            label: Text('ACCIONES DE CAMPO',
+            label: Text('ESTADOS / CHECKLIST',
                 style: GoogleFonts.manrope(
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.5,
@@ -871,7 +871,7 @@ class HubCell extends StatelessWidget {
     } else if (title == 'Ruidos Vocales') {
       val = 'Pista 1';
       unit = 'IZQ';
-    } else if (title == 'Estetoscopio') {
+    } else if (title == 'Fonendoscopio') {
       val = 'Pista 2';
       unit = 'DER';
     }
@@ -879,7 +879,7 @@ class HubCell extends StatelessWidget {
     if (title == 'Ruidos Vocales') {
       return _VoiceModuleCell(instrument: instrument, scale: scale);
     }
-    if (title == 'Estetoscopio') {
+    if (title == 'Fonendoscopio') {
       return _StethoscopeModuleCell(instrument: instrument, scale: scale);
     }
 
@@ -1477,7 +1477,7 @@ void _showVolumeMenu(BuildContext context, SimulationState state, bool isLeft) {
           Text(
               isLeft
                   ? 'Volumen Canal Izquierdo (Ruidos Vocales)'
-                  : 'Volumen Canal Derecho (Estetoscopio)',
+                  : 'Volumen Canal Derecho (Fonendoscopio)',
               style: GoogleFonts.manrope(
                   fontWeight: FontWeight.w900, fontSize: 16)),
           const SizedBox(height: 24),
@@ -1766,7 +1766,7 @@ class _StethoscopeModuleCell extends StatelessWidget {
                   SizedBox(width: 10 * scale),
                   Expanded(
                       child: Text(
-                          isCollapsed ? 'ESTETOSCOPIO' : 'ESTETOSCOPIO (DER)',
+                          isCollapsed ? 'FONENDOSCOPIO' : 'FONENDOSCOPIO (DER)',
                           style: GoogleFonts.manrope(
                               fontSize: 11 * scale,
                               fontWeight: FontWeight.w900,

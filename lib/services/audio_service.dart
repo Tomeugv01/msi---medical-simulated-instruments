@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:audio_session/audio_session.dart';
@@ -27,6 +28,9 @@ class PannedAudioService extends ChangeNotifier {
   bool _rightPlaying1 = false;
   bool _rightPlaying2 = false;
 
+  // Volumen específico para PTT (hereda del canal izquierdo)
+  double _pttVolume = 1.0;
+
   int _lastLogTime = 0;
   void _logWithTime(String message, {LogLevel level = LogLevel.debug}) {
     final now = DateTime.now().millisecondsSinceEpoch;
@@ -45,6 +49,8 @@ class PannedAudioService extends ChangeNotifier {
     _logWithTime('setLeftVolume: $volume', level: LogLevel.info);
     _leftVolume = volume;
     _leftOnlyPlayer.setVolume(volume);
+    setPTTVolume(
+        volume); // ← el PTT usa el mismo volumen que el canal izquierdo
     notifyListeners();
   }
 
@@ -56,11 +62,16 @@ class PannedAudioService extends ChangeNotifier {
     notifyListeners();
   }
 
+  void setPTTVolume(double volume) {
+    _pttVolume = volume.clamp(0.0, 1.0);
+    _logWithTime('PTT volume ajustado a $_pttVolume', level: LogLevel.debug);
+  }
+
   double get leftVolume => _leftVolume;
   double get rightVolume => _rightVolume;
 
   Future<void> _init() async {
-    _logWithTime('Iniciando PannedAudioService (sin conflictos)...',
+    _logWithTime('Iniciando PannedAudioService (con ajuste de volumen PTT)...',
         level: LogLevel.info);
     try {
       final audioSession = await AudioSession.instance;
@@ -76,7 +87,6 @@ class PannedAudioService extends ChangeNotifier {
       await _player.initialize(sampleRate: 16000);
       _logWithTime('sound_stream inicializado', level: LogLevel.info);
 
-      // Precargar sonidos
       await _preloadSounds();
 
       _leftOnlyPlayer.onPlayerComplete.listen((_) {
@@ -183,7 +193,7 @@ class PannedAudioService extends ChangeNotifier {
     }
   }
 
-  // ===================== PTT =====================
+  // ===================== PTT con control de volumen =====================
   Future<void> startPTT() async {
     _logWithTime('startPTT llamado', level: LogLevel.info);
     if (_isPTTActive) return;
@@ -202,7 +212,11 @@ class PannedAudioService extends ChangeNotifier {
       await _audioStreamSubscription?.cancel();
       _audioStreamSubscription = _recorder.audioStream.listen(
         (Uint8List data) {
-          if (_isPTTActive) _player.writeChunk(data);
+          if (_isPTTActive) {
+            // Aplicar ganancia de volumen al flujo PCM (16-bit little-endian)
+            final scaledData = _applyVolumeToPCM(data, _pttVolume);
+            _player.writeChunk(scaledData);
+          }
         },
         onError: (err) =>
             _logWithTime('Error en stream: $err', level: LogLevel.error),
@@ -220,6 +234,31 @@ class PannedAudioService extends ChangeNotifier {
       await stopPTT();
       rethrow;
     }
+  }
+
+  /// Escala el volumen de un buffer PCM de 16 bits (little-endian) según [volume].
+  Uint8List _applyVolumeToPCM(Uint8List data, double volume) {
+    if (volume >= 1.0) return data; // Sin cambios
+    if (volume <= 0.0) return Uint8List(data.length); // Silencio
+
+    final result = Uint8List(data.length);
+    // Procesar cada muestra de 16 bits
+    for (int i = 0; i < data.length; i += 2) {
+      // Leer muestra (little-endian)
+      int sample = data[i] | (data[i + 1] << 8);
+      // Convertir a int con signo
+      if (sample >= 32768) sample -= 65536;
+      // Aplicar ganancia
+      sample = (sample * volume).round();
+      // Limitar a rango de 16 bits con signo
+      sample = sample.clamp(-32768, 32767);
+      // Convertir de nuevo a sin signo para empaquetar
+      if (sample < 0) sample += 65536;
+      // Escribir de vuelta
+      result[i] = sample & 0xFF;
+      result[i + 1] = (sample >> 8) & 0xFF;
+    }
+    return result;
   }
 
   Future<void> stopPTT() async {

@@ -759,7 +759,7 @@ class BluetoothShortCard extends StatelessWidget {
                   ? Colors.blue
                   : msiTheme.primary.withOpacity(0.3)),
         ),
-        title: Text('HARDWARE EXTERNO',
+        title: Text('ACCESORIOS',
             style: GoogleFonts.manrope(
                 fontWeight: FontWeight.w900,
                 fontSize: 11,

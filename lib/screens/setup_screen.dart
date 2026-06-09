@@ -59,7 +59,7 @@ class _SetupScreenState extends State<SetupScreen> {
                         widget.onNavigate(0);
                       }),
                   MainCard(
-                      title: 'Inicio caso clinico preconfigurado',
+                      title: 'Casos Clínicos',
                       icon: LucideIcons.clipboardList,
                       color: const Color(0xFFBFD2FD),
                       onTap: () => setState(() => _view = 'presets')),
@@ -107,7 +107,7 @@ class _SetupScreenState extends State<SetupScreen> {
             crossAxisSpacing: 24,
             children: [
               MainCard(
-                title: 'EQUIPAMIENTO',
+                title: 'Monitorización',
                 icon: LucideIcons.wrench,
                 color: const Color(0xFFD7E2FF),
                 onTap: () => setState(() => _view = 'presets_instrumental'),
@@ -146,7 +146,7 @@ class _SetupScreenState extends State<SetupScreen> {
             IconButton(
                 onPressed: () => setState(() => _view = 'presets'),
                 icon: Icon(LucideIcons.arrowLeft, color: msiTheme.primary)),
-            Text('EQUIPAMIENTO',
+            Text('Monitorización',
                 style: GoogleFonts.manrope(
                     fontSize: 26,
                     fontWeight: FontWeight.w900,

@@ -91,7 +91,7 @@ class SimulationState extends ChangeNotifier {
     Instrument(
         title: 'PANI/PAI', icon: LucideIcons.gauge, isVisibleOnMonitor: false),
     Instrument(title: 'Ruidos Vocales', icon: LucideIcons.mic),
-    Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
+    Instrument(title: 'Fonendoscopio', icon: LucideIcons.stethoscope),
   ];
 
   final List<InstrumentalPreset> _presets = [
@@ -124,7 +124,7 @@ class SimulationState extends ChangeNotifier {
         'Termómetro',
         'PANI/PAI',
         'Ruidos Vocales',
-        'Estetoscopio'
+        'Fonendoscopio'
       ],
       isClinical: true,
       allowedEvents: [
@@ -426,6 +426,8 @@ class SimulationState extends ChangeNotifier {
       case 'Voice':
       case 'Módulo de Sonido':
         return 'Ruidos Vocales';
+      case 'Estetoscopio':
+        return 'Fonendoscopio';
       default:
         return title;
     }
@@ -456,7 +458,7 @@ class SimulationState extends ChangeNotifier {
               icon: LucideIcons.gauge,
               isVisibleOnMonitor: false),
           Instrument(title: 'Ruidos Vocales', icon: LucideIcons.mic),
-          Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
+          Instrument(title: 'Fonendoscopio', icon: LucideIcons.stethoscope),
         ];
 
         for (var item in list) {
@@ -919,7 +921,7 @@ class SimulationState extends ChangeNotifier {
       Instrument(title: 'SpO2 y FR', icon: LucideIcons.wind),
       Instrument(title: 'PANI/PAI', icon: LucideIcons.gauge),
       Instrument(title: 'Ruidos Vocales', icon: LucideIcons.mic),
-      Instrument(title: 'Estetoscopio', icon: LucideIcons.stethoscope),
+      Instrument(title: 'Fonendoscopio', icon: LucideIcons.stethoscope),
     ]);
 
     _presets.clear();
@@ -951,7 +953,7 @@ class SimulationState extends ChangeNotifier {
           'SpO2 y FR',
           'Termómetro',
           'PANI/PAI',
-          'Estetoscopio'
+          'Fonendoscopio'
         ],
         isClinical: true,
         allowedEvents: [
