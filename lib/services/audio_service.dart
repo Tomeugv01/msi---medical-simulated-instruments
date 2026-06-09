@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
-import 'package:audio_session/audio_session.dart' as session;
+import 'package:audio_session/audio_session.dart';
 import 'package:sound_stream/sound_stream.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -26,16 +26,6 @@ class PannedAudioService extends ChangeNotifier {
   bool _leftPlaying = false;
   bool _rightPlaying1 = false;
   bool _rightPlaying2 = false;
-
-  StreamSubscription? _leftCompleteSubscription;
-  StreamSubscription? _right1CompleteSubscription;
-  StreamSubscription? _right2CompleteSubscription;
-  StreamSubscription? _leftPositionSubscription;
-  StreamSubscription? _right1PositionSubscription;
-  StreamSubscription? _right2PositionSubscription;
-
-  Timer? _monitorTimer;
-  int _lastLoggedPosition = -1;
 
   int _lastLogTime = 0;
   void _logWithTime(String message, {LogLevel level = LogLevel.debug}) {
@@ -70,9 +60,10 @@ class PannedAudioService extends ChangeNotifier {
   double get rightVolume => _rightVolume;
 
   Future<void> _init() async {
-    _logWithTime('Iniciando PannedAudioService...', level: LogLevel.info);
+    _logWithTime('Iniciando PannedAudioService (sin conflictos)...',
+        level: LogLevel.info);
     try {
-      final audioSession = await session.AudioSession.instance;
+      final audioSession = await AudioSession.instance;
       await _configureSessionForPlayback();
 
       audioSession.devicesStream.listen((devices) {
@@ -85,102 +76,41 @@ class PannedAudioService extends ChangeNotifier {
       await _player.initialize(sampleRate: 16000);
       _logWithTime('sound_stream inicializado', level: LogLevel.info);
 
+      // Precargar sonidos
       await _preloadSounds();
 
-      _leftCompleteSubscription = _leftOnlyPlayer.onPlayerComplete.listen((_) {
+      _leftOnlyPlayer.onPlayerComplete.listen((_) {
         _leftPlaying = false;
         _syncWakeLock();
         _logWithTime('leftPlayer complete', level: LogLevel.debug);
-        _stopMonitoringIfNeeded();
       });
-      _right1CompleteSubscription = _rightPlayer1.onPlayerComplete.listen((_) {
+      _rightPlayer1.onPlayerComplete.listen((_) {
         _rightPlaying1 = false;
         _syncWakeLock();
         _logWithTime('rightPlayer1 complete', level: LogLevel.debug);
-        _stopMonitoringIfNeeded();
       });
-      _right2CompleteSubscription = _rightPlayer2.onPlayerComplete.listen((_) {
+      _rightPlayer2.onPlayerComplete.listen((_) {
         _rightPlaying2 = false;
         _syncWakeLock();
         _logWithTime('rightPlayer2 complete', level: LogLevel.debug);
-        _stopMonitoringIfNeeded();
       });
 
-      _leftPositionSubscription =
-          _leftOnlyPlayer.onPositionChanged.listen((Duration pos) {
-        if (_leftPlaying) _logPositionChange('left', pos);
-      });
-      _right1PositionSubscription =
-          _rightPlayer1.onPositionChanged.listen((Duration pos) {
-        if (_rightPlaying1) _logPositionChange('right1', pos);
-      });
-      _right2PositionSubscription =
-          _rightPlayer2.onPositionChanged.listen((Duration pos) {
-        if (_rightPlaying2) _logPositionChange('right2', pos);
-      });
+      _logWithTime('Audio service listo', level: LogLevel.info);
     } catch (e, stack) {
       _logWithTime('Error en _init: $e\n$stack', level: LogLevel.error);
-    }
-  }
-
-  void _logPositionChange(String player, Duration pos) {
-    final deltaSinceLastLog = _lastLoggedPosition == -1
-        ? 0
-        : pos.inMilliseconds - _lastLoggedPosition;
-    _logWithTime(
-        '📊 [$player] posición: ${pos.inMilliseconds}ms (avance: ${deltaSinceLastLog}ms)',
-        level: LogLevel.debug);
-    _lastLoggedPosition = pos.inMilliseconds;
-  }
-
-  void _startMonitoring() {
-    if (_monitorTimer == null) {
-      _monitorTimer =
-          Timer.periodic(const Duration(milliseconds: 200), (timer) {
-        if (!_leftPlaying && !_rightPlaying1 && !_rightPlaying2) {
-          _stopMonitoringIfNeeded();
-          return;
-        }
-        final leftState = _leftOnlyPlayer.state.name;
-        final right1State = _rightPlayer1.state.name;
-        final right2State = _rightPlayer2.state.name;
-        _logWithTime(
-            '🔍 Monitor: left=$leftState, right1=$right1State, right2=$right2State',
-            level: LogLevel.debug);
-      });
-    }
-  }
-
-  void _stopMonitoringIfNeeded() {
-    if (!_leftPlaying && !_rightPlaying1 && !_rightPlaying2) {
-      _monitorTimer?.cancel();
-      _monitorTimer = null;
-      _logWithTime('Monitor detenido (sin reproducción)',
-          level: LogLevel.debug);
-      _lastLoggedPosition = -1;
     }
   }
 
   Future<void> _preloadSounds() async {
     _logWithTime('Precargando sonidos...', level: LogLevel.info);
     try {
-      // Sin configuración avanzada de buffer (usamos por defecto)
-      await _leftOnlyPlayer.setSourceAsset('audio.mp3');
-      await _rightPlayer1.setSourceAsset('audio2.mp3');
-      await _rightPlayer2.setSourceAsset('audio2.mp3');
-
-      await _leftOnlyPlayer.setReleaseMode(ap.ReleaseMode.stop);
-      await _rightPlayer1.setReleaseMode(ap.ReleaseMode.stop);
-      await _rightPlayer2.setReleaseMode(ap.ReleaseMode.stop);
-
-      // Configurar canales: izquierdo a la izquierda, derechos a la derecha
-      await _leftOnlyPlayer.setBalance(-1.0);
-      await _rightPlayer1.setBalance(1.0);
-      await _rightPlayer2.setBalance(1.0);
+      // Asegúrate de tener los archivos en 'assets/sounds/' y declarados en pubspec.yaml
+      await _leftOnlyPlayer.setSourceAsset('sounds/audio.mp3');
+      await _rightPlayer1.setSourceAsset('sounds/audio2.mp3');
+      await _rightPlayer2.setSourceAsset('sounds/audio2.mp3');
       _logWithTime('Sonidos precargados correctamente', level: LogLevel.info);
     } catch (e, stack) {
-      _logWithTime('Error en _preloadSounds: $e\n$stack',
-          level: LogLevel.error);
+      _logWithTime('Error cargando sonidos: $e\n$stack', level: LogLevel.error);
     }
   }
 
@@ -198,21 +128,21 @@ class PannedAudioService extends ChangeNotifier {
 
   Future<void> _configureSessionForPlayback() async {
     try {
-      final audioSession = await session.AudioSession.instance;
-      await audioSession.configure(session.AudioSessionConfiguration(
-        avAudioSessionCategory: session.AVAudioSessionCategory.playback,
+      final audioSession = await AudioSession.instance;
+      await audioSession.configure(AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playback,
         avAudioSessionCategoryOptions:
-            session.AVAudioSessionCategoryOptions.defaultToSpeaker |
-                session.AVAudioSessionCategoryOptions.allowBluetooth,
-        avAudioSessionMode: session.AVAudioSessionMode.defaultMode,
-        androidAudioAttributes: const session.AndroidAudioAttributes(
-          contentType: session.AndroidAudioContentType.music,
-          usage: session.AndroidAudioUsage.media,
-          flags: session.AndroidAudioFlags.none,
+            AVAudioSessionCategoryOptions.defaultToSpeaker |
+                AVAudioSessionCategoryOptions.allowBluetooth,
+        avAudioSessionMode: AVAudioSessionMode.defaultMode,
+        androidAudioAttributes: const AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.music,
+          usage: AndroidAudioUsage.media,
+          flags: AndroidAudioFlags.none,
         ),
-        androidAudioFocusGainType: session.AndroidAudioFocusGainType.gain,
+        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
       ));
-      _logWithTime('Sesión de playback configurada', level: LogLevel.info);
+      _logWithTime('✅ Sesión de playback configurada', level: LogLevel.info);
     } catch (e, stack) {
       _logWithTime('Error configurando playback: $e\n$stack',
           level: LogLevel.error);
@@ -221,18 +151,18 @@ class PannedAudioService extends ChangeNotifier {
 
   Future<void> _configureSessionForPTT() async {
     try {
-      final audioSession = await session.AudioSession.instance;
-      await audioSession.configure(session.AudioSessionConfiguration(
-        avAudioSessionCategory: session.AVAudioSessionCategory.playAndRecord,
-        avAudioSessionMode: session.AVAudioSessionMode.videoChat,
+      final audioSession = await AudioSession.instance;
+      await audioSession.configure(AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
         avAudioSessionCategoryOptions:
-            session.AVAudioSessionCategoryOptions.defaultToSpeaker |
-                session.AVAudioSessionCategoryOptions.allowBluetooth,
-        androidAudioAttributes: const session.AndroidAudioAttributes(
-          contentType: session.AndroidAudioContentType.speech,
-          usage: session.AndroidAudioUsage.voiceCommunication,
+            AVAudioSessionCategoryOptions.defaultToSpeaker |
+                AVAudioSessionCategoryOptions.allowBluetooth,
+        avAudioSessionMode: AVAudioSessionMode.videoChat,
+        androidAudioAttributes: const AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.speech,
+          usage: AndroidAudioUsage.voiceCommunication,
         ),
-        androidAudioFocusGainType: session.AndroidAudioFocusGainType.gain,
+        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
       ));
       _logWithTime('Sesión de PTT configurada', level: LogLevel.info);
     } catch (e, stack) {
@@ -240,12 +170,12 @@ class PannedAudioService extends ChangeNotifier {
     }
   }
 
-  void _handleDevicesChanged(List<session.AudioDevice> devices) {
+  void _handleDevicesChanged(List<AudioDevice> devices) {
     final hasHeadset = devices.any((d) =>
-        d.type == session.AudioDeviceType.wiredHeadset ||
-        d.type == session.AudioDeviceType.wiredHeadphones ||
-        d.type == session.AudioDeviceType.bluetoothA2dp ||
-        d.type == session.AudioDeviceType.bluetoothSco);
+        d.type == AudioDeviceType.wiredHeadset ||
+        d.type == AudioDeviceType.wiredHeadphones ||
+        d.type == AudioDeviceType.bluetoothA2dp ||
+        d.type == AudioDeviceType.bluetoothSco);
     if (_isHeadsetConnected != hasHeadset) {
       _isHeadsetConnected = hasHeadset;
       _logWithTime('Headset conectado: $hasHeadset', level: LogLevel.info);
@@ -266,7 +196,7 @@ class PannedAudioService extends ChangeNotifier {
 
     try {
       await _configureSessionForPTT();
-      final audioSession = await session.AudioSession.instance;
+      final audioSession = await AudioSession.instance;
       await audioSession.setActive(true);
 
       await _audioStreamSubscription?.cancel();
@@ -316,20 +246,20 @@ class PannedAudioService extends ChangeNotifier {
     _logWithTime('▶️ playLeftOnly - inicio', level: LogLevel.info);
     _leftPlaying = true;
     await _syncWakeLock();
+    await _leftOnlyPlayer.setBalance(-1.0);
     await _leftOnlyPlayer.seek(Duration.zero);
     await _leftOnlyPlayer.resume();
     _logWithTime('✅ Ruidos vocales reproduciéndose', level: LogLevel.info);
-    _startMonitoring();
   }
 
   Future<void> playRightOnly() async {
     _logWithTime('▶️ playRightOnly - inicio', level: LogLevel.info);
     _rightPlaying1 = true;
     await _syncWakeLock();
+    await _rightPlayer1.setBalance(1.0);
     await _rightPlayer1.seek(Duration.zero);
     await _rightPlayer1.resume();
     _logWithTime('✅ Estetoscopio reproduciéndose', level: LogLevel.info);
-    _startMonitoring();
   }
 
   Future<void> playBothOnRight() async {
@@ -337,13 +267,14 @@ class PannedAudioService extends ChangeNotifier {
     _rightPlaying1 = true;
     _rightPlaying2 = true;
     await _syncWakeLock();
+    await _rightPlayer1.setBalance(1.0);
+    await _rightPlayer2.setBalance(1.0);
     await _rightPlayer1.seek(Duration.zero);
     await _rightPlayer2.seek(Duration.zero);
     await _rightPlayer1.resume();
     await _rightPlayer2.resume();
     _logWithTime('✅ Ambos sonidos reproduciéndose en derecho',
         level: LogLevel.info);
-    _startMonitoring();
   }
 
   // ===================== Detener =====================
@@ -353,7 +284,6 @@ class PannedAudioService extends ChangeNotifier {
     _leftPlaying = false;
     await _syncWakeLock();
     _logWithTime('Ruidos vocales detenidos', level: LogLevel.info);
-    _stopMonitoringIfNeeded();
   }
 
   Future<void> stopRight() async {
@@ -364,7 +294,6 @@ class PannedAudioService extends ChangeNotifier {
     _rightPlaying2 = false;
     await _syncWakeLock();
     _logWithTime('Estetoscopio detenido', level: LogLevel.info);
-    _stopMonitoringIfNeeded();
   }
 
   Future<void> stop() async {
@@ -378,13 +307,6 @@ class PannedAudioService extends ChangeNotifier {
   @override
   void dispose() {
     _logWithTime('Disposing PannedAudioService', level: LogLevel.info);
-    _monitorTimer?.cancel();
-    _leftPositionSubscription?.cancel();
-    _right1PositionSubscription?.cancel();
-    _right2PositionSubscription?.cancel();
-    _leftCompleteSubscription?.cancel();
-    _right1CompleteSubscription?.cancel();
-    _right2CompleteSubscription?.cancel();
     _audioStreamSubscription?.cancel();
     _recorder.dispose();
     _player.dispose();
