@@ -34,16 +34,16 @@ class SimulationState extends ChangeNotifier {
   final TelemetryService _telemetryService = TelemetryService();
 
   // --- Core Vital Signs (Current Simulation) ---
-  int _hr = 72; // Heart Rate (BPM)
-  int _spo2 = 98; // Oxygen Saturation (%)
-  int _co2 = 20; // Repurposed for FR in SpO2 y FR (logical rate)
-  int _resp = 14; // Respiratory Rate (/min)
-  double _temp = 36.6; // Temperature (°C)
-  int _glucose = 110; // Blood Glucose (mg/dL)
-  int _sys = 120; // Systolic Blood Pressure (mmHg)
-  int _dia = 80; // Diastolic Blood Pressure (mmHg)
+  int _hr = 72;
+  int _spo2 = 98;
+  int _co2 = 20;
+  int _resp = 14;
+  double _temp = 36.6;
+  int _glucose = 110;
+  int _sys = 120;
+  int _dia = 80;
 
-  // --- Transmitted Vital Signs (What the tablet sees) ---
+  // --- Transmitted Vital Signs ---
   int _txHr = 72;
   int _txSpo2 = 98;
   int _txCo2 = 20;
@@ -177,7 +177,6 @@ class SimulationState extends ChangeNotifier {
 
   SimulationState() {
     _loadSettings();
-    // Connect to audio service changes
     _audioService.addListener(notifyListeners);
   }
 
@@ -338,15 +337,11 @@ class SimulationState extends ChangeNotifier {
       _completedMeasurements[m] = false;
     }
 
-    // If empty (legacy/default), maybe we want to allow all?
-    // Usually, if a clinical case is selected, it should have its own.
-    // Let's stick to what's in the preset.
-
     // Ensure telemetry is stopped before starting a new simulation/preset
     try {
       _telemetryService.stop();
     } catch (_) {}
-    startSimulation();
+    startSimulation(); // <- este método ahora ocultará todos los instrumentos
     notifyListeners();
   }
 
@@ -378,7 +373,6 @@ class SimulationState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // Método nuevo para alternar visibilidad en el monitor
   void toggleVisibilityOnMonitor(String instrumentTitle) {
     final index = _instruments.indexWhere((i) => i.title == instrumentTitle);
     if (index != -1) {
@@ -563,14 +557,14 @@ class SimulationState extends ChangeNotifier {
       await prefs.setBool('monitorThemeDark', _monitorThemeDark);
 
       final instrumentsData = _instruments
-          .map((i) => {
+          .map((i) => ({
                 'title': i.title,
                 'isEnabled': i.isEnabled,
                 'textColor': i.textColor?.value,
                 'isManualTransmission': i.isManualTransmission,
                 'isVisibleOnMonitor': i.isVisibleOnMonitor,
                 'transmissionDelayMs': i.transmissionDelayMs,
-              })
+              }))
           .toList();
       await prefs.setString('instruments', jsonEncode(instrumentsData));
 
@@ -610,9 +604,6 @@ class SimulationState extends ChangeNotifier {
   DeviceConnectionState get bleStatus => _bleStatus;
   bool get isConnected => _bleStatus == DeviceConnectionState.connected;
 
-  /// Updates a specific vital sign and triggers necessary side effects.
-  /// This includes physiological correlations (like Systolic/Diastolic ratio)
-  /// and broadcasting updates to any connected Bluetooth hardware.
   void setVital(String type, num value) {
     if (type == 'hr') _hr = value.toInt();
     if (type == 'spo2') _spo2 = value.toInt();
@@ -622,12 +613,10 @@ class SimulationState extends ChangeNotifier {
     if (type == 'glucose') _glucose = value.toInt();
     if (type == 'sys') {
       _sys = value.toInt();
-      // Physiological correlation: Diastolic is roughly 2/3 of Systolic in healthy adults
       _dia = (_sys * 0.67).round();
     }
     if (type == 'dia') {
       _dia = value.toInt();
-      // Reverse correlation logic for bidirectional manual adjustment
       _sys = (_dia / 0.67).round();
     }
 
@@ -727,7 +716,7 @@ class SimulationState extends ChangeNotifier {
       _syncTransmittedValues(instrumentTitle);
       _instruments[idx].hasPendingSync = false;
       _scheduleTransmission(instrumentTitle);
-      _sendVitalsToDevice(); // Para hardware externo
+      _sendVitalsToDevice();
       notifyListeners();
     }
   }
@@ -760,15 +749,27 @@ class SimulationState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ===================== MODIFICACIÓN PRINCIPAL =====================
+  // Al iniciar cualquier simulación, todos los instrumentos se ocultan en el monitor.
+  // ==================================================================
   void startSimulation() async {
     if (_isRunning) return;
-    // Ensure telemetry service is stopped and clean before starting
+
+    // 🔄 RESET: todos los instrumentos empiezan ocultos en el monitor
+    for (var inst in _instruments) {
+      inst.isVisibleOnMonitor = false;
+    }
+    // Notificamos a la UI para que actualice los botones de ojo
+    notifyListeners();
+    // No guardamos en SharedPreferences para no perder la configuración permanente.
+
+    // Limpiar servicio de telemetría
     try {
       await _telemetryService.stop();
       await Future.delayed(const Duration(milliseconds: 300));
     } catch (_) {}
 
-    // Request Peripheral and Scanning Permissions
+    // Solicitar permisos
     await [
       Permission.bluetoothAdvertise,
       Permission.bluetoothConnect,
@@ -802,8 +803,6 @@ class SimulationState extends ChangeNotifier {
     _collapsedInstruments.clear();
     _collapsedInstruments.addAll(enabledInstruments.map((i) => i.title));
 
-    // If it's a "Quick Start" (no active events/measurements set by a preset),
-    // we use the global ones.
     if (_activeEvents.isEmpty) {
       _activeEvents = List.from(_events);
     }
@@ -811,7 +810,6 @@ class SimulationState extends ChangeNotifier {
       _activeMeasurements = List.from(_measurements);
     }
 
-    // Initialize completion status
     for (var m in _activeMeasurements) {
       _completedMeasurements[m] = false;
     }
@@ -825,7 +823,6 @@ class SimulationState extends ChangeNotifier {
       _sendVitalsToDevice();
     });
 
-    // Start searching for monitors after ensuring telemetry was reset
     _telemetryService.startSearch();
     _telemetryService.removeListener(_onTelemetryReady);
     _telemetryService.addListener(_onTelemetryReady);
@@ -837,6 +834,7 @@ class SimulationState extends ChangeNotifier {
 
     notifyListeners();
   }
+  // ==================================================================
 
   void _checkAndLogVitalsChanges() {
     List<String> changes = [];
@@ -892,7 +890,6 @@ class SimulationState extends ChangeNotifier {
     await _telemetryService.stop();
     await _audioService.stop();
 
-    // Final checklist summary
     if (_completedMeasurements.isNotEmpty) {
       int total = _completedMeasurements.length;
       int completed = _completedMeasurements.values.where((v) => v).length;
@@ -1089,7 +1086,6 @@ class SimulationState extends ChangeNotifier {
   void recordEvent(ClinicalEvent event) {
     _addLog("Evento Clínico", event.title);
 
-    // Apply effects
     event.healthEffects.forEach((vital, change) {
       if (vital == 'hr') setVital('hr', _hr + change);
       if (vital == 'spo2') setVital('spo2', (_spo2 + change).clamp(0, 100));
@@ -1209,7 +1205,6 @@ class SimulationState extends ChangeNotifier {
     }
   }
 
-  /// Envía al monitor el estado completo de todos los instrumentos visibles.
   void _sendFullStateToMonitor() {
     if (!_isRunning) return;
     final List<Map<String, dynamic>> payload = [];
@@ -1224,7 +1219,6 @@ class SimulationState extends ChangeNotifier {
     }
   }
 
-  // Nuevo helper para añadir instrumento al payload
   void _addInstrumentToPayload(
       Instrument inst, List<Map<String, dynamic>> payload) {
     if (inst.title == 'FC') {

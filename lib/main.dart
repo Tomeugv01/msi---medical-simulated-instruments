@@ -9,19 +9,18 @@ import './screens/hub_screen.dart';
 import './screens/reports_screen.dart';
 import './widgets/msi_modals.dart';
 
-/// Main entry point for the MSI (Medical Simulated Instruments) Application.
-/// Initializes the [SimulationState] provider and sets up the global theme.
 void main() {
   runApp(
     ChangeNotifierProvider(
       create: (_) => SimulationState(),
-      child: const ClinicalEtherApp(),
+      child: const MSIApp(), // ← Cambiado el nombre de la clase
     ),
   );
 }
 
-class ClinicalEtherApp extends StatelessWidget {
-  const ClinicalEtherApp({super.key});
+class MSIApp extends StatelessWidget {
+  // ← Renombrada
+  const MSIApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +28,7 @@ class ClinicalEtherApp extends StatelessWidget {
     final msiTheme = state.theme;
 
     return MaterialApp(
-      title: 'MSI - Medical Simulated Instruments',
+      title: 'MSI', // ← Cambiado de "clinical_ether" a "MSI"
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,

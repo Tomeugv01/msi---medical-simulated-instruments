@@ -1,5 +1,6 @@
-name: clinical_ether
-description: A high-fidelity clinical simulation and telemetry monitoring app.
+name: msi_medical_simulated_instruments
+description: MSI - Medical Simulated Instruments
+publish_to: 'none'
 version: 1.0.0+1
 
 environment:
@@ -30,6 +31,14 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: false
+  image_path: "assets/logo.png"
+  min_sdk_android: 21
+
 
 flutter:
   uses-material-design: true
@@ -37,3 +46,5 @@ flutter:
     - assets/logo.png
     - assets/sounds/audio.mp3
     - assets/sounds/audio2.mp3
+    - assets/fonts/roboto_bold.ttf
+    - assets/fonts/noto_color_emoji.ttf
