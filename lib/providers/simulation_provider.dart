@@ -203,19 +203,27 @@ class SimulationState extends ChangeNotifier {
   }
 
   Future<void> playLeft() async {
-    await _audioService.playLeftOnly('audio.mp3');
+    await _audioService.playLeftOnly();
   }
 
   Future<void> playRight() async {
-    await _audioService.playRightOnly('audio2.mp3');
+    await _audioService.playRightOnly();
   }
 
   Future<void> playBothRight() async {
-    await _audioService.playBothOnRight('audio.mp3', 'audio2.mp3');
+    await _audioService.playBothOnRight();
   }
 
-  void stopSound() {
-    _audioService.stop();
+  Future<void> stopLeftSound() async {
+    await _audioService.stopLeft();
+  }
+
+  Future<void> stopRightSound() async {
+    await _audioService.stopRight();
+  }
+
+  Future<void> stopSound() async {
+    await _audioService.stop();
   }
 
   List<InstrumentalPreset> get instrumentalPresets =>
@@ -880,6 +888,7 @@ class SimulationState extends ChangeNotifier {
     }
 
     await _telemetryService.stop();
+    await _audioService.stop();
 
     // Final checklist summary
     if (_completedMeasurements.isNotEmpty) {

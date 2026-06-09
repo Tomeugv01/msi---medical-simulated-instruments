@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/simulation_provider.dart';
 import '../models/instrumental_models.dart';
 import '../services/telemetry_service.dart';
+import '../services/logger_service.dart';
 
 /// [HubScreen] is the main operational view where the user monitors the simulation.
 /// It displays enabled instruments in a grid/wrap layout.
@@ -85,6 +86,12 @@ class HubScreen extends StatelessWidget {
               ),
               Row(
                 children: [
+                  IconButton(
+                    tooltip: 'Ver logs',
+                    icon: const Icon(LucideIcons.bug),
+                    color: msiTheme.primary,
+                    onPressed: () => _showDebugDialog(context),
+                  ),
                   _ColumnSelector(current: state.hubColumns),
                   const SizedBox(width: 12),
                   const _MonitorThemeToggle(),
@@ -181,6 +188,46 @@ class HubScreen extends StatelessWidget {
             const SizedBox(height: 24),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showDebugDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Registro de depuración'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: 400,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: LoggerService.getLogs()
+                  .map(
+                    (log) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(log,
+                          style: const TextStyle(fontSize: 10, height: 1.2)),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cerrar'),
+          ),
+          TextButton(
+            onPressed: () {
+              LoggerService.clearLogs();
+              Navigator.pop(context);
+            },
+            child: const Text('Limpiar logs'),
+          ),
+        ],
       ),
     );
   }
@@ -1713,7 +1760,7 @@ class _VoiceModuleCell extends StatelessWidget {
                     icon: LucideIcons.square,
                     scale: scale,
                     isStop: true,
-                    onTap: () => state.stopSound(),
+                    onTap: () => state.stopLeftSound(),
                   ),
                 ],
               ),
@@ -1845,7 +1892,7 @@ class _StethoscopeModuleCell extends StatelessWidget {
                     icon: LucideIcons.square,
                     scale: scale,
                     isStop: true,
-                    onTap: () => state.stopSound(),
+                    onTap: () => state.stopRightSound(),
                   ),
                 ],
               ),

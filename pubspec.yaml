@@ -23,6 +23,7 @@ dependencies:
   sound_stream:
     path: plugins/sound_stream
   reorderables: ^0.6.0
+  wakelock_plus: ^1.6.1
 
 dev_dependencies:
   flutter_test:
