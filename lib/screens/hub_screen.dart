@@ -1694,11 +1694,23 @@ class _VoiceModuleCell extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: _SoundBtn(
-                          label: 'REPRODUCIR',
+                        child: _SoundMenuBtn(
+                          label: 'SONIDO',
                           icon: LucideIcons.playCircle,
                           scale: scale,
-                          onTap: () => state.playLeft(),
+                          isPlaying: state.isLeftAudioPlaying,
+                          options: [
+                            _SoundMenuOption(
+                              label: 'TOS',
+                              icon: LucideIcons.volume2,
+                              onTap: () => state.playVoiceCough(),
+                            ),
+                            _SoundMenuOption(
+                              label: 'NÁUSEAS',
+                              icon: LucideIcons.volume2,
+                              onTap: () => state.playVoiceNausea(),
+                            ),
+                          ],
                         ),
                       ),
                       SizedBox(width: 8 * scale),
@@ -1818,24 +1830,21 @@ class _StethoscopeModuleCell extends StatelessWidget {
                     ],
                   ),
                   SizedBox(height: 16 * scale),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _SoundBtn(
-                          label: 'LATIDOS',
-                          icon: LucideIcons.heartPulse,
-                          scale: scale,
-                          onTap: () => state.playRight(),
-                        ),
+                  _SoundMenuBtn(
+                    label: 'SONIDO',
+                    icon: LucideIcons.stethoscope,
+                    scale: scale,
+                    isPlaying: state.isRightAudioPlaying,
+                    options: [
+                      _SoundMenuOption(
+                        label: 'SIBILANCIAS',
+                        icon: LucideIcons.wind,
+                        onTap: () => state.playStethoscopeWheezing(),
                       ),
-                      SizedBox(width: 8 * scale),
-                      Expanded(
-                        child: _SoundBtn(
-                          label: 'AMBOS',
-                          icon: LucideIcons.copy,
-                          scale: scale,
-                          onTap: () => state.playBothRight(),
-                        ),
+                      _SoundMenuOption(
+                        label: 'LATIDOS',
+                        icon: LucideIcons.heartPulse,
+                        onTap: () => state.playStethoscopeHeart(),
                       ),
                     ],
                   ),
@@ -1851,6 +1860,100 @@ class _StethoscopeModuleCell extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+class _SoundMenuOption {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _SoundMenuOption({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+}
+
+class _SoundMenuBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final double scale;
+  final bool isPlaying;
+  final List<_SoundMenuOption> options;
+
+  const _SoundMenuBtn({
+    required this.label,
+    required this.icon,
+    required this.scale,
+    required this.isPlaying,
+    required this.options,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<SimulationState>().theme;
+
+    final bgColor = isPlaying ? Colors.red.withOpacity(0.14) : theme.accent;
+    final borderColor = isPlaying
+        ? Colors.red.withOpacity(0.45)
+        : theme.primary.withOpacity(0.1);
+    final contentColor = isPlaying ? Colors.red : theme.primary;
+
+    return PopupMenuButton<int>(
+      tooltip: label,
+      color: theme.card,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16 * scale),
+      ),
+      onSelected: (index) => options[index].onTap(),
+      itemBuilder: (context) => List.generate(options.length, (index) {
+        final option = options[index];
+
+        return PopupMenuItem<int>(
+          value: index,
+          child: Row(
+            children: [
+              Icon(option.icon, size: 18 * scale, color: theme.primary),
+              SizedBox(width: 10 * scale),
+              Text(
+                option.label,
+                style: GoogleFonts.manrope(
+                  fontSize: 12 * scale,
+                  fontWeight: FontWeight.w900,
+                  color: theme.text,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        );
+      }),
+      child: Container(
+        padding:
+            EdgeInsets.symmetric(horizontal: 12 * scale, vertical: 10 * scale),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12 * scale),
+          border: Border.all(color: borderColor, width: isPlaying ? 2 : 1),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 18 * scale, color: contentColor),
+            SizedBox(height: 4 * scale),
+            Text(
+              label,
+              style: GoogleFonts.manrope(
+                fontSize: 8 * scale,
+                fontWeight: FontWeight.w900,
+                color: contentColor,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

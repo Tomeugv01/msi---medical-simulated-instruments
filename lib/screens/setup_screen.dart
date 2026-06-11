@@ -45,24 +45,23 @@ class _SetupScreenState extends State<SetupScreen> {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 48,
-                runSpacing: 32,
+              _ResponsiveMainCardGrid(
                 children: [
                   MainCard(
-                      title: 'Inicio Rápido',
-                      icon: LucideIcons.zap,
-                      color: const Color(0xFFD7E2FF),
-                      onTap: () {
-                        context.read<SimulationState>().startSimulation();
-                        widget.onNavigate(0);
-                      }),
+                    title: 'Inicio Rápido',
+                    icon: LucideIcons.zap,
+                    color: const Color(0xFFD7E2FF),
+                    onTap: () {
+                      context.read<SimulationState>().startSimulation();
+                      widget.onNavigate(0);
+                    },
+                  ),
                   MainCard(
-                      title: 'Casos Clínicos',
-                      icon: LucideIcons.clipboardList,
-                      color: const Color(0xFFBFD2FD),
-                      onTap: () => setState(() => _view = 'presets')),
+                    title: 'Casos Clínicos',
+                    icon: LucideIcons.clipboardList,
+                    color: const Color(0xFFBFD2FD),
+                    onTap: () => setState(() => _view = 'presets'),
+                  ),
                 ],
               ),
             ],
@@ -83,44 +82,51 @@ class _SetupScreenState extends State<SetupScreen> {
 
   Widget _buildPresets(bool mobile) {
     final msiTheme = context.watch<SimulationState>().theme;
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(32),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          IconButton(
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            IconButton(
               onPressed: () => setState(() => _view = 'main'),
-              icon: Icon(LucideIcons.arrowLeft, color: msiTheme.primary)),
-          Text('Elegir Categoría',
+              icon: Icon(LucideIcons.arrowLeft, color: msiTheme.primary),
+            ),
+            Text(
+              'Elegir Categoría',
               style: GoogleFonts.manrope(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                  color: msiTheme.text,
-                  letterSpacing: -0.5)),
-          const SizedBox(height: 32),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: mobile ? 1 : 2,
-            childAspectRatio: mobile ? 1.8 : 2.2,
-            mainAxisSpacing: 24,
-            crossAxisSpacing: 24,
-            children: [
-              MainCard(
-                title: 'Monitorización',
-                icon: LucideIcons.wrench,
-                color: const Color(0xFFD7E2FF),
-                onTap: () => setState(() => _view = 'presets_instrumental'),
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                color: msiTheme.text,
+                letterSpacing: -0.5,
               ),
-              MainCard(
-                title: 'Casos Clínicos',
-                icon: LucideIcons.clipboardList,
-                color: const Color(0xFFBFD2FD),
-                onTap: () => setState(() => _view = 'presets_clinicos'),
+            ),
+            Expanded(
+              child: Center(
+                child: SingleChildScrollView(
+                  child: _ResponsiveMainCardGrid(
+                    children: [
+                      MainCard(
+                        title: 'Monitorización',
+                        icon: LucideIcons.wrench,
+                        color: const Color(0xFFD7E2FF),
+                        onTap: () =>
+                            setState(() => _view = 'presets_instrumental'),
+                      ),
+                      MainCard(
+                        title: 'Casos Clínicos',
+                        icon: LucideIcons.clipboardList,
+                        color: const Color(0xFFBFD2FD),
+                        onTap: () => setState(() => _view = 'presets_clinicos'),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -348,6 +354,68 @@ class _SetupScreenState extends State<SetupScreen> {
   }
 }
 
+class _ResponsiveMainCardGrid extends StatelessWidget {
+  final List<Widget> children;
+
+  const _ResponsiveMainCardGrid({
+    required this.children,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final availableWidth = constraints.maxWidth;
+
+        /*
+         * Layout responsive:
+         * - Pantallas pequeñas y medianas: tarjetas una sobre la otra,
+         *   como en el teléfono.
+         * - Pantallas muy anchas: se permiten dos columnas, pero las tarjetas
+         *   crecen de forma proporcional y no quedan pequeñas en el centro.
+         */
+        final useOneColumn = availableWidth < 980;
+        final spacing = useOneColumn ? 22.0 : 32.0;
+
+        final maxCardWidth = useOneColumn
+            ? availableWidth.clamp(280.0, 560.0)
+            : ((availableWidth - spacing) / 2).clamp(320.0, 520.0);
+
+        final cardWidth = maxCardWidth.toDouble();
+
+        if (useOneColumn) {
+          return Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (var i = 0; i < children.length; i++) ...[
+                SizedBox(
+                  width: cardWidth,
+                  child: children[i],
+                ),
+                if (i != children.length - 1) SizedBox(height: spacing),
+              ],
+            ],
+          );
+        }
+
+        return Wrap(
+          alignment: WrapAlignment.center,
+          spacing: spacing,
+          runSpacing: spacing,
+          children: children
+              .map(
+                (child) => SizedBox(
+                  width: cardWidth,
+                  child: child,
+                ),
+              )
+              .toList(),
+        );
+      },
+    );
+  }
+}
+
 class MainCard extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -363,15 +431,27 @@ class MainCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final msiTheme = context.watch<SimulationState>().theme;
-    bool mobile = MediaQuery.of(context).size.width < 700;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isCompact = screenWidth < 700;
+    final verticalPadding =
+        isCompact ? 40.0 : (screenWidth * 0.045).clamp(42.0, 72.0);
+    final horizontalPadding =
+        isCompact ? 24.0 : (screenWidth * 0.03).clamp(28.0, 44.0);
+    final iconSize = isCompact ? 48.0 : (screenWidth * 0.045).clamp(52.0, 72.0);
+    final titleSize =
+        isCompact ? 16.0 : (screenWidth * 0.015).clamp(17.0, 22.0);
+
     Color bgColor = msiTheme.name == 'MSI Classic' ? color : msiTheme.card;
     if (msiTheme.name == 'Cyber Dark') bgColor = msiTheme.card;
 
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: mobile ? double.infinity : 280,
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+        width: double.infinity,
+        padding: EdgeInsets.symmetric(
+          horizontal: horizontalPadding,
+          vertical: verticalPadding,
+        ),
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(32),
@@ -386,13 +466,13 @@ class MainCard extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 48, color: msiTheme.primary),
+            Icon(icon, size: iconSize, color: msiTheme.primary),
             const SizedBox(height: 20),
             Text(title,
                 textAlign: TextAlign.center,
                 style: GoogleFonts.manrope(
                     fontWeight: FontWeight.w900,
-                    fontSize: 16,
+                    fontSize: titleSize,
                     color: msiTheme.text,
                     letterSpacing: -0.2)),
           ],

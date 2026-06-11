@@ -182,6 +182,8 @@ class SimulationState extends ChangeNotifier {
 
   bool get isHeadsetConnected => _audioService.isHeadsetConnected;
   bool get isPTTActive => _audioService.isPTTActive;
+  bool get isLeftAudioPlaying => _audioService.isLeftPlaying;
+  bool get isRightAudioPlaying => _audioService.isRightPlaying;
   double get leftVolume => _audioService.leftVolume;
   double get rightVolume => _audioService.rightVolume;
 
@@ -202,11 +204,27 @@ class SimulationState extends ChangeNotifier {
   }
 
   Future<void> playLeft() async {
-    await _audioService.playLeftOnly();
+    await _audioService.playLeftCough();
+  }
+
+  Future<void> playVoiceCough() async {
+    await _audioService.playLeftCough();
+  }
+
+  Future<void> playVoiceNausea() async {
+    await _audioService.playLeftNausea();
   }
 
   Future<void> playRight() async {
-    await _audioService.playRightOnly();
+    await _audioService.playStethoscopeHeart();
+  }
+
+  Future<void> playStethoscopeWheezing() async {
+    await _audioService.playStethoscopeWheezing();
+  }
+
+  Future<void> playStethoscopeHeart() async {
+    await _audioService.playStethoscopeHeart();
   }
 
   Future<void> playBothRight() async {
