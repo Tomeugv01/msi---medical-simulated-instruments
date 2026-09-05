@@ -51,7 +51,7 @@ class HubScreen extends StatelessWidget {
           ElevatedButton.icon(
             onPressed: () => _showActionsMenu(context, state),
             icon: const Icon(LucideIcons.plusCircle, size: 18),
-            label: Text('ESTADOS / CHECKLIST',
+            label: Text('ACCIONES',
                 style: GoogleFonts.manrope(
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.5,
@@ -73,7 +73,7 @@ class HubScreen extends StatelessWidget {
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('PANEL EN VIVO',
+                  Text('MONITOR',
                       style: GoogleFonts.manrope(
                           fontSize: 12,
                           fontWeight: FontWeight.w900,
@@ -95,21 +95,61 @@ class HubScreen extends StatelessWidget {
           const SizedBox(height: 16),
           LayoutBuilder(
             builder: (context, constraints) {
-              final spacing = 16.0;
-              final colCount = state.hubColumns;
-              final itemWidth =
-                  (constraints.maxWidth - (spacing * (colCount - 1))) /
-                      colCount;
+              const spacing = 16.0;
 
-              return Wrap(
-                spacing: spacing,
-                runSpacing: spacing,
-                children: displayItems.map((inst) {
-                  return SizedBox(
-                    width: itemWidth,
-                    child: HubCell(instrument: inst, key: ValueKey(inst.title)),
-                  );
-                }).toList(),
+              final expandedItems = displayItems
+                  .where((inst) => !state.isCollapsed(inst.title))
+                  .toList();
+              final collapsedItems = displayItems
+                  .where((inst) => state.isCollapsed(inst.title))
+                  .toList();
+
+              Widget buildInstrumentWrap(
+                List<Instrument> items, {
+                required int requestedColumns,
+              }) {
+                if (items.isEmpty) return const SizedBox.shrink();
+
+                final columns = requestedColumns.clamp(1, items.length);
+                final itemWidth =
+                    (constraints.maxWidth - (spacing * (columns - 1))) /
+                        columns;
+
+                return Wrap(
+                  spacing: spacing,
+                  runSpacing: spacing,
+                  children: items.map((inst) {
+                    return SizedBox(
+                      width: itemWidth,
+                      child: HubCell(
+                        instrument: inst,
+                        key: ValueKey(inst.title),
+                      ),
+                    );
+                  }).toList(),
+                );
+              }
+
+              /*
+               * Los módulos expandidos usan una rejilla propia en la parte
+               * superior. Si solo hay uno, ocupa todo el ancho; si hay dos,
+               * se reparten la fila; y así hasta el número de columnas elegido.
+               * Los módulos colapsados quedan agrupados debajo.
+               */
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  buildInstrumentWrap(
+                    expandedItems,
+                    requestedColumns: state.hubColumns,
+                  ),
+                  if (expandedItems.isNotEmpty && collapsedItems.isNotEmpty)
+                    const SizedBox(height: spacing),
+                  buildInstrumentWrap(
+                    collapsedItems,
+                    requestedColumns: state.hubColumns,
+                  ),
+                ],
               );
             },
           ),
@@ -140,46 +180,72 @@ class HubScreen extends StatelessWidget {
     final msiTheme = state.theme;
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.82,
+        ),
         padding: const EdgeInsets.symmetric(vertical: 32, horizontal: 24),
         decoration: BoxDecoration(
           color: msiTheme.background,
           borderRadius: const BorderRadius.only(
               topLeft: Radius.circular(32), topRight: Radius.circular(32)),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('ACCIONES DISPONIBLES',
-                style: GoogleFonts.manrope(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: msiTheme.text,
-                    letterSpacing: -0.5)),
-            const SizedBox(height: 32),
-            _ActionCategoryTile(
-              title: 'Estados',
-              icon: LucideIcons.zap,
-              color: const Color(0xFFD7E2FF),
-              onTap: () {
-                Navigator.pop(context);
-                _showSubActions(context, state, 'Estados', state.activeEvents);
-              },
-            ),
-            const SizedBox(height: 16),
-            _ActionCategoryTile(
-              title: 'Checklist',
-              icon: LucideIcons.gauge,
-              color: const Color(0xFFBFD2FD),
-              onTap: () {
-                Navigator.pop(context);
-                _showSubActions(
-                    context, state, 'Checklist', state.activeMeasurements);
-              },
-            ),
-            const SizedBox(height: 24),
-          ],
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text('ACCIONES',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.manrope(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: msiTheme.text,
+                      letterSpacing: -0.5)),
+              const SizedBox(height: 24),
+              if (state.currentIntroduction.isNotEmpty) ...[
+                _SessionTextBlock(
+                  title: 'INTRODUCCIÓN',
+                  icon: LucideIcons.fileText,
+                  text: state.currentIntroduction,
+                  msiTheme: msiTheme,
+                ),
+                const SizedBox(height: 16),
+              ],
+              _ActionCategoryTile(
+                title: 'Estados',
+                icon: LucideIcons.zap,
+                color: const Color(0xFFD7E2FF),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showSubActions(context, state, 'Estados', state.activeEvents);
+                },
+              ),
+              const SizedBox(height: 16),
+              _ActionCategoryTile(
+                title: 'Checklist',
+                icon: LucideIcons.gauge,
+                color: const Color(0xFFBFD2FD),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showSubActions(
+                      context, state, 'Checklist', state.activeMeasurements);
+                },
+              ),
+              if (state.currentNotes.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                _SessionTextBlock(
+                  title: 'NOTAS',
+                  icon: LucideIcons.fileText,
+                  text: state.currentNotes,
+                  msiTheme: msiTheme,
+                ),
+              ],
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -581,6 +647,63 @@ class _TelemetryStatusBadge extends StatelessWidget {
   }
 }
 
+class _SessionTextBlock extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final String text;
+  final MSITheme msiTheme;
+
+  const _SessionTextBlock({
+    required this.title,
+    required this.icon,
+    required this.text,
+    required this.msiTheme,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: msiTheme.card,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: msiTheme.text.withOpacity(0.06)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: msiTheme.primary),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: GoogleFonts.manrope(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.4,
+                  color: msiTheme.primary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            text,
+            style: GoogleFonts.manrope(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              height: 1.35,
+              color: msiTheme.text.withOpacity(0.78),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ActionCategoryTile extends StatelessWidget {
   final String title;
   final IconData icon;
@@ -681,73 +804,80 @@ class HubCell extends StatelessWidget {
   }
 
   void _showGasesManualInput(BuildContext context, SimulationState state) {
-    final TextEditingController o2Controller =
-        TextEditingController(text: '${state.spo2}');
-    final TextEditingController co2Controller =
-        TextEditingController(text: '${state.co2}');
+    // Fallback antiguo: si alguna llamada genérica llega aquí, abrimos SpO2.
+    // En la celda SpO2/FR ya usamos _showSingleVitalManualInput para que
+    // tocar SpO2 abra solo SpO2 y tocar FR abra solo FR.
+    _showSingleVitalManualInput(
+      context: context,
+      state: state,
+      vitalKey: 'spo2',
+      title: 'Ajustar SpO2',
+      labelText: 'SpO2 (%)',
+      initialValue: state.spo2,
+    );
+  }
+
+  void _showSingleVitalManualInput({
+    required BuildContext context,
+    required SimulationState state,
+    required String vitalKey,
+    required String title,
+    required String labelText,
+    required num initialValue,
+  }) {
+    final TextEditingController controller =
+        TextEditingController(text: '$initialValue');
     final msiTheme = state.theme;
 
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         backgroundColor: msiTheme.background,
-        title: Text('Ajustar SpO2 y FR',
-            style: GoogleFonts.manrope(
-                fontWeight: FontWeight.w900, color: msiTheme.primary)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: o2Controller,
-              keyboardType: TextInputType.number,
-              autofocus: true,
-              decoration: InputDecoration(
-                labelText: 'Sat% (%)',
-                labelStyle: GoogleFonts.manrope(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1),
-                filled: true,
-                fillColor: msiTheme.card,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none),
-              ),
+        title: Text(
+          title,
+          style: GoogleFonts.manrope(
+            fontWeight: FontWeight.w900,
+            color: msiTheme.primary,
+          ),
+        ),
+        content: TextField(
+          controller: controller,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: labelText,
+            labelStyle: GoogleFonts.manrope(
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1,
             ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: co2Controller,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(
-                labelText: 'FR (rpm)',
-                labelStyle: GoogleFonts.manrope(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1),
-                filled: true,
-                fillColor: msiTheme.card,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none),
-              ),
+            filled: true,
+            fillColor: msiTheme.card,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide.none,
             ),
-          ],
+          ),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancelar')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancelar'),
+          ),
           ElevatedButton(
             onPressed: () {
-              final o2 = int.tryParse(o2Controller.text);
-              final co2 = int.tryParse(co2Controller.text);
-              if (o2 != null) state.setVital('spo2', o2);
-              if (co2 != null) state.setVital('co2', co2);
+              final val = double.tryParse(controller.text.replaceAll(',', '.'));
+
+              if (val != null) {
+                state.setVital(vitalKey, val);
+              }
+
               Navigator.pop(context);
             },
             style: ElevatedButton.styleFrom(
-                backgroundColor: msiTheme.primary,
-                foregroundColor: Colors.white),
+              backgroundColor: msiTheme.primary,
+              foregroundColor: Colors.white,
+            ),
             child: const Text('Guardar'),
           ),
         ],
@@ -1087,45 +1217,86 @@ class HubCell extends StatelessWidget {
                       ),
                     ),
                   ),
-                GestureDetector(
-                  onTap: () => state.toggleVisibilityOnMonitor(title),
-                  child: Container(
-                    padding: EdgeInsets.all(8 * scale),
-                    decoration: BoxDecoration(
-                      color: instrument.isVisibleOnMonitor
-                          ? Colors.blue.withOpacity(0.1)
-                          : Colors.grey.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      instrument.isVisibleOnMonitor
-                          ? LucideIcons.eye
-                          : LucideIcons.eyeOff,
-                      size: 14 * scale,
-                      color: instrument.isVisibleOnMonitor
-                          ? Colors.blue
-                          : Colors.grey,
+                SizedBox(width: 6 * scale),
+                Tooltip(
+                  message: instrument.isVisibleOnMonitor
+                      ? 'Ocultar del monitor'
+                      : 'Mostrar en el monitor',
+                  child: InkWell(
+                    onTap: () => state.toggleVisibilityOnMonitor(title),
+                    borderRadius: BorderRadius.circular(12 * scale),
+                    child: Container(
+                      constraints: BoxConstraints(
+                        minWidth: 42 * scale,
+                        minHeight: 34 * scale,
+                      ),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 10 * scale,
+                        vertical: 8 * scale,
+                      ),
+                      decoration: BoxDecoration(
+                        color: instrument.isVisibleOnMonitor
+                            ? Colors.blue.withOpacity(0.12)
+                            : Colors.grey.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12 * scale),
+                        border: Border.all(
+                          color: instrument.isVisibleOnMonitor
+                              ? Colors.blue.withOpacity(0.22)
+                              : Colors.grey.withOpacity(0.20),
+                        ),
+                      ),
+                      child: Icon(
+                        instrument.isVisibleOnMonitor
+                            ? LucideIcons.eye
+                            : LucideIcons.eyeOff,
+                        size: 17 * scale,
+                        color: instrument.isVisibleOnMonitor
+                            ? Colors.blue
+                            : Colors.grey,
+                      ),
                     ),
                   ),
                 ),
-                GestureDetector(
-                  onTap: () => state.toggleTransmissionMode(title),
-                  child: Container(
-                    padding: EdgeInsets.all(8 * scale),
-                    decoration: BoxDecoration(
-                      color: instrument.isManualTransmission
-                          ? Colors.orange.withOpacity(0.1)
-                          : Colors.green.withOpacity(0.1),
-                      shape: BoxShape.circle,
-                    ),
-                    child: Icon(
-                      instrument.isManualTransmission
-                          ? LucideIcons.hand
-                          : LucideIcons.zap,
-                      size: 14 * scale,
-                      color: instrument.isManualTransmission
-                          ? Colors.orange
-                          : Colors.green,
+                SizedBox(width: 6 * scale),
+                Tooltip(
+                  message: instrument.isManualTransmission
+                      ? 'Cambiar a automático'
+                      : 'Cambiar a manual',
+                  child: InkWell(
+                    onTap: () => state.toggleTransmissionMode(title),
+                    borderRadius: BorderRadius.circular(12 * scale),
+                    child: Container(
+                      constraints: BoxConstraints(
+                        minWidth: 54 * scale,
+                        minHeight: 34 * scale,
+                      ),
+                      padding: EdgeInsets.symmetric(
+                        horizontal: 11 * scale,
+                        vertical: 8 * scale,
+                      ),
+                      decoration: BoxDecoration(
+                        color: instrument.isManualTransmission
+                            ? Colors.orange.withOpacity(0.12)
+                            : Colors.green.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(12 * scale),
+                        border: Border.all(
+                          color: instrument.isManualTransmission
+                              ? Colors.orange.withOpacity(0.24)
+                              : Colors.green.withOpacity(0.24),
+                        ),
+                      ),
+                      child: Text(
+                        instrument.isManualTransmission ? 'MAN' : 'AUTO',
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.manrope(
+                          fontSize: 10 * scale,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                          color: instrument.isManualTransmission
+                              ? Colors.orange
+                              : Colors.green,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -1184,8 +1355,14 @@ class HubCell extends StatelessWidget {
                         ),
                         SizedBox(height: 4 * scale),
                         GestureDetector(
-                          onTap: () => _showManualInput(
-                              context, state, 'spo2', instrument.title),
+                          onTap: () => _showSingleVitalManualInput(
+                            context: context,
+                            state: state,
+                            vitalKey: 'spo2',
+                            title: 'Ajustar SpO2',
+                            labelText: 'SpO2 (%)',
+                            initialValue: state.spo2,
+                          ),
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
@@ -1243,8 +1420,14 @@ class HubCell extends StatelessWidget {
                         ),
                         SizedBox(height: 4 * scale),
                         GestureDetector(
-                          onTap: () => _showManualInput(
-                              context, state, 'co2', instrument.title),
+                          onTap: () => _showSingleVitalManualInput(
+                            context: context,
+                            state: state,
+                            vitalKey: 'co2',
+                            title: 'Ajustar FR',
+                            labelText: 'FR (rpm)',
+                            initialValue: state.co2,
+                          ),
                           child: FittedBox(
                             fit: BoxFit.scaleDown,
                             child: Text(
@@ -1394,19 +1577,43 @@ class _DelayButton extends StatelessWidget {
           PopupMenuItem(value: 15000, child: Text('15 segundos')),
         ],
         child: Container(
-          padding:
-              EdgeInsets.symmetric(horizontal: 6 * scale, vertical: 4 * scale),
-          decoration: BoxDecoration(
-            color: theme.primary.withOpacity(0.8),
-            borderRadius: BorderRadius.circular(8 * scale),
+          constraints: BoxConstraints(
+            minWidth: 48 * scale,
+            minHeight: 34 * scale,
           ),
-          child: Text(
-            _getDelayLabel(instrument.transmissionDelayMs),
-            style: GoogleFonts.manrope(
-              fontSize: 9 * scale,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-            ),
+          padding: EdgeInsets.symmetric(
+            horizontal: 11 * scale,
+            vertical: 8 * scale,
+          ),
+          decoration: BoxDecoration(
+            color: theme.primary.withOpacity(0.90),
+            borderRadius: BorderRadius.circular(12 * scale),
+            boxShadow: [
+              BoxShadow(
+                color: theme.primary.withOpacity(0.18),
+                blurRadius: 6 * scale,
+                offset: Offset(0, 2 * scale),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                LucideIcons.clock3,
+                size: 14 * scale,
+                color: Colors.white,
+              ),
+              SizedBox(width: 5 * scale),
+              Text(
+                _getDelayLabel(instrument.transmissionDelayMs),
+                style: GoogleFonts.manrope(
+                  fontSize: 10 * scale,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -1694,11 +1901,47 @@ class _VoiceModuleCell extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: _SoundBtn(
-                          label: 'REPRODUCIR',
+                        child: _SoundMenuBtn(
+                          label: 'SONIDO',
                           icon: LucideIcons.playCircle,
                           scale: scale,
-                          onTap: () => state.playLeft(),
+                          isPlaying: state.isLeftAudioPlaying,
+                          options: [
+                            _SoundMenuOption(
+                              label: 'TOS',
+                              icon: LucideIcons.volume2,
+                              onTap: () => state.playVoiceCough(),
+                            ),
+                            _SoundMenuOption(
+                              label: 'NÁUSEAS',
+                              icon: LucideIcons.volume2,
+                              onTap: () => state.playVoiceNausea(),
+                            ),
+                            ...state.customVoiceSounds.map(
+                              (sound) => _SoundMenuOption(
+                                label: sound.label,
+                                icon: Icons.music_note,
+                                onTap: () => state.playCustomVoiceSound(sound),
+                                onRename: () => _showRenameCustomSoundDialog(
+                                  context,
+                                  state: state,
+                                  isVoice: true,
+                                  sound: sound,
+                                ),
+                                onDelete: () => _showDeleteCustomSoundDialog(
+                                  context,
+                                  state: state,
+                                  isVoice: true,
+                                  sound: sound,
+                                ),
+                              ),
+                            ),
+                            _SoundMenuOption(
+                              label: 'AÑADIR SONIDO...',
+                              icon: Icons.folder_open,
+                              onTap: () => state.importCustomSound(isVoice: true),
+                            ),
+                          ],
                         ),
                       ),
                       SizedBox(width: 8 * scale),
@@ -1818,24 +2061,45 @@ class _StethoscopeModuleCell extends StatelessWidget {
                     ],
                   ),
                   SizedBox(height: 16 * scale),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _SoundBtn(
-                          label: 'LATIDOS',
-                          icon: LucideIcons.heartPulse,
-                          scale: scale,
-                          onTap: () => state.playRight(),
+                  _SoundMenuBtn(
+                    label: 'SONIDO',
+                    icon: LucideIcons.stethoscope,
+                    scale: scale,
+                    isPlaying: state.isRightAudioPlaying,
+                    options: [
+                      _SoundMenuOption(
+                        label: 'SIBILANCIAS',
+                        icon: LucideIcons.wind,
+                        onTap: () => state.playStethoscopeWheezing(),
+                      ),
+                      _SoundMenuOption(
+                        label: 'LATIDOS',
+                        icon: LucideIcons.heartPulse,
+                        onTap: () => state.playStethoscopeHeart(),
+                      ),
+                      ...state.customStethoscopeSounds.map(
+                        (sound) => _SoundMenuOption(
+                          label: sound.label,
+                          icon: Icons.music_note,
+                          onTap: () => state.playCustomStethoscopeSound(sound),
+                          onRename: () => _showRenameCustomSoundDialog(
+                            context,
+                            state: state,
+                            isVoice: false,
+                            sound: sound,
+                          ),
+                          onDelete: () => _showDeleteCustomSoundDialog(
+                            context,
+                            state: state,
+                            isVoice: false,
+                            sound: sound,
+                          ),
                         ),
                       ),
-                      SizedBox(width: 8 * scale),
-                      Expanded(
-                        child: _SoundBtn(
-                          label: 'AMBOS',
-                          icon: LucideIcons.copy,
-                          scale: scale,
-                          onTap: () => state.playBothRight(),
-                        ),
+                      _SoundMenuOption(
+                        label: 'AÑADIR SONIDO...',
+                        icon: Icons.folder_open,
+                        onTap: () => state.importCustomSound(isVoice: false),
                       ),
                     ],
                   ),
@@ -1851,6 +2115,243 @@ class _StethoscopeModuleCell extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+
+
+void _showRenameCustomSoundDialog(
+  BuildContext context, {
+  required SimulationState state,
+  required bool isVoice,
+  required CustomAudioSound sound,
+}) {
+  final controller = TextEditingController(text: sound.label);
+  final theme = state.theme;
+
+  showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        backgroundColor: theme.card,
+        title: Text(
+          'Renombrar sonido',
+          style: GoogleFonts.manrope(fontWeight: FontWeight.w900),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            labelText: 'Nombre visible',
+            border: OutlineInputBorder(),
+          ),
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) {
+            state.renameCustomSound(
+              isVoice: isVoice,
+              id: sound.id,
+              label: controller.text,
+            );
+            Navigator.pop(dialogContext);
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              state.renameCustomSound(
+                isVoice: isVoice,
+                id: sound.id,
+                label: controller.text,
+              );
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Guardar'),
+          ),
+        ],
+      );
+    },
+  ).whenComplete(controller.dispose);
+}
+
+void _showDeleteCustomSoundDialog(
+  BuildContext context, {
+  required SimulationState state,
+  required bool isVoice,
+  required CustomAudioSound sound,
+}) {
+  final theme = state.theme;
+
+  showDialog<void>(
+    context: context,
+    builder: (dialogContext) {
+      return AlertDialog(
+        backgroundColor: theme.card,
+        title: Text(
+          'Eliminar sonido',
+          style: GoogleFonts.manrope(fontWeight: FontWeight.w900),
+        ),
+        content: Text('¿Quieres eliminar "${sound.label}" de la aplicación?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () {
+              state.deleteCustomSound(
+                isVoice: isVoice,
+                id: sound.id,
+              );
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Eliminar'),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+class _SoundMenuOption {
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+  final VoidCallback? onRename;
+  final VoidCallback? onDelete;
+
+  const _SoundMenuOption({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+    this.onRename,
+    this.onDelete,
+  });
+}
+
+class _SoundMenuBtn extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final double scale;
+  final bool isPlaying;
+  final List<_SoundMenuOption> options;
+
+  const _SoundMenuBtn({
+    required this.label,
+    required this.icon,
+    required this.scale,
+    required this.isPlaying,
+    required this.options,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = context.watch<SimulationState>().theme;
+
+    final bgColor = isPlaying ? Colors.red.withOpacity(0.14) : theme.accent;
+    final borderColor = isPlaying
+        ? Colors.red.withOpacity(0.45)
+        : theme.primary.withOpacity(0.1);
+    final contentColor = isPlaying ? Colors.red : theme.primary;
+
+    return PopupMenuButton<int>(
+      tooltip: label,
+      color: theme.card,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16 * scale),
+      ),
+      onSelected: (index) => options[index].onTap(),
+      itemBuilder: (context) => List.generate(options.length, (index) {
+        final option = options[index];
+
+        return PopupMenuItem<int>(
+          value: index,
+          child: Row(
+            children: [
+              Icon(option.icon, size: 18 * scale, color: theme.primary),
+              SizedBox(width: 10 * scale),
+              Expanded(
+                child: Text(
+                  option.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.manrope(
+                    fontSize: 12 * scale,
+                    fontWeight: FontWeight.w900,
+                    color: theme.text,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ),
+              if (option.onRename != null) ...[
+                SizedBox(width: 8 * scale),
+                InkWell(
+                  borderRadius: BorderRadius.circular(20 * scale),
+                  onTap: () {
+                    Navigator.pop(context);
+                    option.onRename!();
+                  },
+                  child: Padding(
+                    padding: EdgeInsets.all(6 * scale),
+                    child: Icon(
+                      Icons.edit,
+                      size: 16 * scale,
+                      color: theme.primary.withOpacity(0.75),
+                    ),
+                  ),
+                ),
+              ],
+              if (option.onDelete != null) ...[
+                SizedBox(width: 2 * scale),
+                InkWell(
+                  borderRadius: BorderRadius.circular(20 * scale),
+                  onTap: () {
+                    Navigator.pop(context);
+                    option.onDelete!();
+                  },
+                  child: Padding(
+                    padding: EdgeInsets.all(6 * scale),
+                    child: Icon(
+                      Icons.delete_outline,
+                      size: 16 * scale,
+                      color: Colors.red.withOpacity(0.8),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+      }),
+      child: Container(
+        padding:
+            EdgeInsets.symmetric(horizontal: 12 * scale, vertical: 10 * scale),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(12 * scale),
+          border: Border.all(color: borderColor, width: isPlaying ? 2 : 1),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, size: 18 * scale, color: contentColor),
+            SizedBox(height: 4 * scale),
+            Text(
+              label,
+              style: GoogleFonts.manrope(
+                fontSize: 8 * scale,
+                fontWeight: FontWeight.w900,
+                color: contentColor,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

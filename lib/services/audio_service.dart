@@ -1,109 +1,130 @@
 import 'dart:async';
-import 'dart:typed_data';
+
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart' as ap;
 import 'package:audio_session/audio_session.dart';
 import 'package:sound_stream/sound_stream.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+
 import 'logger_service.dart';
 
 class PannedAudioService extends ChangeNotifier {
-  final ap.AudioPlayer _leftOnlyPlayer = ap.AudioPlayer();
-  final ap.AudioPlayer _rightPlayer1 = ap.AudioPlayer();
+  final ap.AudioPlayer _leftPlayer = ap.AudioPlayer();
+  final ap.AudioPlayer _rightPlayer = ap.AudioPlayer();
   final ap.AudioPlayer _rightPlayer2 = ap.AudioPlayer();
 
+  // Se mantiene como en la versión estable.
+  // Aunque ahora el PTT real lo haga Android nativo, dejamos sound_stream
+  // inicializado igual que cuando las pistas funcionaban perfectas.
   final RecorderStream _recorder = RecorderStream();
   final PlayerStream _player = PlayerStream();
-  StreamSubscription<Uint8List>? _audioStreamSubscription;
-  bool _isPTTActive = false;
 
+  static const MethodChannel _nativePttChannel =
+      MethodChannel('msi_native_ptt');
+
+  static const String voiceCoughAsset = 'sounds/tos.mp3';
+  static const String voiceNauseaAsset = 'sounds/nausea.mp3';
+  static const String stethoscopeWheezingAsset = 'sounds/wheezing.mp3';
+  static const String stethoscopeHeartAsset = 'sounds/heart.mp3';
+
+  bool _isPTTActive = false;
   bool _isHeadsetConnected = false;
+
   bool get isHeadsetConnected => _isHeadsetConnected;
   bool get isPTTActive => _isPTTActive;
+  bool get isLeftPlaying => _leftPlaying;
+  bool get isRightPlaying => _rightPlaying1 || _rightPlaying2;
 
   double _leftVolume = 1.0;
   double _rightVolume = 1.0;
+
   bool _leftPlaying = false;
   bool _rightPlaying1 = false;
   bool _rightPlaying2 = false;
 
-  // Volumen específico para PTT (hereda del canal izquierdo)
-  double _pttVolume = 1.0;
+  bool _isPrimed = false;
+  Future<void>? _primeFuture;
 
   int _lastLogTime = 0;
-  void _logWithTime(String message, {LogLevel level = LogLevel.debug}) {
-    final now = DateTime.now().millisecondsSinceEpoch;
-    final delta = _lastLogTime == 0 ? 0 : now - _lastLogTime;
-    final timestamp =
-        DateTime.fromMillisecondsSinceEpoch(now).toIso8601String();
-    LoggerService.log('[$timestamp] +${delta}ms: $message', level: level);
-    _lastLogTime = now;
-  }
 
   PannedAudioService() {
     _init();
   }
 
+  double get leftVolume => _leftVolume;
+  double get rightVolume => _rightVolume;
+
+  void _logWithTime(String message, {LogLevel level = LogLevel.debug}) {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final delta = _lastLogTime == 0 ? 0 : now - _lastLogTime;
+    final timestamp =
+        DateTime.fromMillisecondsSinceEpoch(now).toIso8601String();
+
+    LoggerService.log('[$timestamp] +${delta}ms: $message', level: level);
+    _lastLogTime = now;
+  }
+
   void setLeftVolume(double volume) {
-    _logWithTime('setLeftVolume: $volume', level: LogLevel.info);
     _leftVolume = volume;
-    _leftOnlyPlayer.setVolume(volume);
-    setPTTVolume(
-        volume); // ← el PTT usa el mismo volumen que el canal izquierdo
+    _leftPlayer.setVolume(volume);
     notifyListeners();
   }
 
   void setRightVolume(double volume) {
-    _logWithTime('setRightVolume: $volume', level: LogLevel.info);
     _rightVolume = volume;
-    _rightPlayer1.setVolume(volume);
+    _rightPlayer.setVolume(volume);
     _rightPlayer2.setVolume(volume);
     notifyListeners();
   }
 
-  void setPTTVolume(double volume) {
-    _pttVolume = volume.clamp(0.0, 1.0);
-    _logWithTime('PTT volume ajustado a $_pttVolume', level: LogLevel.debug);
-  }
-
-  double get leftVolume => _leftVolume;
-  double get rightVolume => _rightVolume;
-
   Future<void> _init() async {
-    _logWithTime('Iniciando PannedAudioService (con ajuste de volumen PTT)...',
-        level: LogLevel.info);
+    _logWithTime(
+      'Iniciando PannedAudioService estable + menú de sonidos + PTT nativo aislado...',
+      level: LogLevel.info,
+    );
+
     try {
       final audioSession = await AudioSession.instance;
+
       await _configureSessionForPlayback();
 
-      audioSession.devicesStream.listen((devices) {
-        _handleDevicesChanged(devices.toList());
-      });
-      await audioSession.setActive(true);
-      _logWithTime('AudioSession activada', level: LogLevel.info);
+      audioSession.devicesStream.listen(
+        (devices) => _handleDevicesChanged(devices.toList()),
+      );
 
+      await audioSession.setActive(true);
+
+      // Esto se mantiene exactamente como en la versión estable.
       await _recorder.initialize(sampleRate: 16000);
       await _player.initialize(sampleRate: 16000);
-      _logWithTime('sound_stream inicializado', level: LogLevel.info);
 
-      await _preloadSounds();
+      await _leftPlayer.setReleaseMode(ap.ReleaseMode.stop);
+      await _rightPlayer.setReleaseMode(ap.ReleaseMode.stop);
+      await _rightPlayer2.setReleaseMode(ap.ReleaseMode.stop);
 
-      _leftOnlyPlayer.onPlayerComplete.listen((_) {
+      _leftPlayer.onPlayerComplete.listen((_) {
         _leftPlaying = false;
         _syncWakeLock();
-        _logWithTime('leftPlayer complete', level: LogLevel.debug);
+        notifyListeners();
       });
-      _rightPlayer1.onPlayerComplete.listen((_) {
+
+      _rightPlayer.onPlayerComplete.listen((_) {
         _rightPlaying1 = false;
         _syncWakeLock();
-        _logWithTime('rightPlayer1 complete', level: LogLevel.debug);
+        notifyListeners();
       });
+
       _rightPlayer2.onPlayerComplete.listen((_) {
         _rightPlaying2 = false;
         _syncWakeLock();
-        _logWithTime('rightPlayer2 complete', level: LogLevel.debug);
+        notifyListeners();
       });
+
+      // Primer arranque silencioso de cada AudioPlayer real.
+      _primeFuture = _primeAllPlayers();
+      await _primeFuture;
 
       _logWithTime('Audio service listo', level: LogLevel.info);
     } catch (e, stack) {
@@ -111,248 +132,556 @@ class PannedAudioService extends ChangeNotifier {
     }
   }
 
-  Future<void> _preloadSounds() async {
-    _logWithTime('Precargando sonidos...', level: LogLevel.info);
-    try {
-      // Asegúrate de tener los archivos en 'assets/sounds/' y declarados en pubspec.yaml
-      await _leftOnlyPlayer.setSourceAsset('sounds/audio.mp3');
-      await _rightPlayer1.setSourceAsset('sounds/audio2.mp3');
-      await _rightPlayer2.setSourceAsset('sounds/audio2.mp3');
-      _logWithTime('Sonidos precargados correctamente', level: LogLevel.info);
-    } catch (e, stack) {
-      _logWithTime('Error cargando sonidos: $e\n$stack', level: LogLevel.error);
-    }
-  }
-
   Future<void> _syncWakeLock() async {
     final shouldKeepAwake =
         _isPTTActive || _leftPlaying || _rightPlaying1 || _rightPlaying2;
+
     if (shouldKeepAwake) {
       await WakelockPlus.enable();
-      _logWithTime('WakeLock activado', level: LogLevel.debug);
     } else {
       await WakelockPlus.disable();
-      _logWithTime('WakeLock desactivado', level: LogLevel.debug);
     }
   }
 
   Future<void> _configureSessionForPlayback() async {
     try {
-      final audioSession = await AudioSession.instance;
-      await audioSession.configure(AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playback,
-        avAudioSessionCategoryOptions:
-            AVAudioSessionCategoryOptions.defaultToSpeaker |
-                AVAudioSessionCategoryOptions.allowBluetooth,
-        avAudioSessionMode: AVAudioSessionMode.defaultMode,
-        androidAudioAttributes: const AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.music,
-          usage: AndroidAudioUsage.media,
-          flags: AndroidAudioFlags.none,
-        ),
-        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-      ));
-      _logWithTime('✅ Sesión de playback configurada', level: LogLevel.info);
-    } catch (e, stack) {
-      _logWithTime('Error configurando playback: $e\n$stack',
-          level: LogLevel.error);
-    }
-  }
+      final session = await AudioSession.instance;
 
-  Future<void> _configureSessionForPTT() async {
-    try {
-      final audioSession = await AudioSession.instance;
-      await audioSession.configure(AudioSessionConfiguration(
-        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-        avAudioSessionCategoryOptions:
-            AVAudioSessionCategoryOptions.defaultToSpeaker |
-                AVAudioSessionCategoryOptions.allowBluetooth,
-        avAudioSessionMode: AVAudioSessionMode.videoChat,
-        androidAudioAttributes: const AndroidAudioAttributes(
-          contentType: AndroidAudioContentType.speech,
-          usage: AndroidAudioUsage.voiceCommunication,
+      await session.configure(
+        AudioSessionConfiguration(
+          avAudioSessionCategory: AVAudioSessionCategory.playback,
+          avAudioSessionCategoryOptions:
+              AVAudioSessionCategoryOptions.defaultToSpeaker |
+                  AVAudioSessionCategoryOptions.allowBluetooth,
+          avAudioSessionMode: AVAudioSessionMode.defaultMode,
+          androidAudioAttributes: const AndroidAudioAttributes(
+            contentType: AndroidAudioContentType.music,
+            usage: AndroidAudioUsage.media,
+          ),
+          androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
         ),
-        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-      ));
-      _logWithTime('Sesión de PTT configurada', level: LogLevel.info);
+      );
+
+      await session.setActive(true);
     } catch (e, stack) {
-      _logWithTime('Error configurando PTT: $e\n$stack', level: LogLevel.error);
+      _logWithTime(
+        'Error configurando sesión playback: $e\n$stack',
+        level: LogLevel.error,
+      );
     }
   }
 
   void _handleDevicesChanged(List<AudioDevice> devices) {
-    final hasHeadset = devices.any((d) =>
-        d.type == AudioDeviceType.wiredHeadset ||
-        d.type == AudioDeviceType.wiredHeadphones ||
-        d.type == AudioDeviceType.bluetoothA2dp ||
-        d.type == AudioDeviceType.bluetoothSco);
+    final hasHeadset = devices.any(
+      (device) =>
+          device.type == AudioDeviceType.wiredHeadset ||
+          device.type == AudioDeviceType.wiredHeadphones ||
+          device.type == AudioDeviceType.bluetoothA2dp ||
+          device.type == AudioDeviceType.bluetoothSco,
+    );
+
     if (_isHeadsetConnected != hasHeadset) {
       _isHeadsetConnected = hasHeadset;
-      _logWithTime('Headset conectado: $hasHeadset', level: LogLevel.info);
       notifyListeners();
     }
   }
 
-  // ===================== PTT con control de volumen =====================
+  Future<void> _primeAllPlayers() async {
+    if (_isPrimed) return;
+
+    try {
+      _logWithTime('Priming de players iniciado', level: LogLevel.info);
+
+      await _configureSessionForPlayback();
+
+      await _primeOnePlayer(
+        player: _leftPlayer,
+        assetPath: voiceCoughAsset,
+        balance: -1.0,
+      );
+
+      await _primeOnePlayer(
+        player: _rightPlayer,
+        assetPath: stethoscopeHeartAsset,
+        balance: 1.0,
+      );
+
+      await _primeOnePlayer(
+        player: _rightPlayer2,
+        assetPath: voiceCoughAsset,
+        balance: 1.0,
+      );
+
+      await _leftPlayer.setVolume(_leftVolume);
+      await _rightPlayer.setVolume(_rightVolume);
+      await _rightPlayer2.setVolume(_rightVolume);
+
+      _isPrimed = true;
+
+      _logWithTime('Priming de players completado', level: LogLevel.info);
+    } catch (e, stack) {
+      _logWithTime(
+        'Error durante priming de players: $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
+  }
+
+  Future<void> _primeOnePlayer({
+    required ap.AudioPlayer player,
+    required String assetPath,
+    required double balance,
+  }) async {
+    try {
+      await player.stop();
+
+      await player.setSourceAsset(assetPath);
+      await player.setVolume(0.0);
+      await player.setBalance(balance);
+      await player.seek(Duration.zero);
+
+      await player.resume();
+
+      await Future.delayed(const Duration(milliseconds: 250));
+
+      await player.setBalance(balance);
+      await player.setVolume(0.0);
+
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      await player.stop();
+      await player.seek(Duration.zero);
+
+      await player.setBalance(balance);
+    } catch (e, stack) {
+      _logWithTime(
+        'Error en _primeOnePlayer($assetPath, balance=$balance): $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
+  }
+
+  Future<void> _waitUntilPrimed() async {
+    if (_isPrimed) return;
+
+    final future = _primeFuture;
+    if (future != null) {
+      await future;
+    } else {
+      _primeFuture = _primeAllPlayers();
+      await _primeFuture;
+    }
+  }
+
+  Future<void> _reprimeAfterPTT() async {
+    _logWithTime('Rehaciendo priming después de PTT...', level: LogLevel.info);
+
+    _isPrimed = false;
+
+    await _configureSessionForPlayback();
+
+    await Future.delayed(const Duration(milliseconds: 250));
+
+    _primeFuture = _primeAllPlayers();
+    await _primeFuture;
+
+    _logWithTime('Priming post-PTT completado', level: LogLevel.info);
+  }
+
   Future<void> startPTT() async {
     _logWithTime('startPTT llamado', level: LogLevel.info);
+
     if (_isPTTActive) return;
 
     final status = await Permission.microphone.request();
+
     if (status != PermissionStatus.granted) {
-      _logWithTime('Permiso de micrófono denegado', level: LogLevel.error);
       throw Exception('Permiso de micrófono denegado');
     }
 
     try {
-      await _configureSessionForPTT();
-      final audioSession = await AudioSession.instance;
-      await audioSession.setActive(true);
+      await stopLeft();
+      await stopRight();
 
-      await _audioStreamSubscription?.cancel();
-      _audioStreamSubscription = _recorder.audioStream.listen(
-        (Uint8List data) {
-          if (_isPTTActive) {
-            // Aplicar ganancia de volumen al flujo PCM (16-bit little-endian)
-            final scaledData = _applyVolumeToPCM(data, _pttVolume);
-            _player.writeChunk(scaledData);
-          }
+      await _nativePttChannel.invokeMethod(
+        'startPtt',
+        <String, dynamic>{
+          'leftVolume': _leftVolume,
         },
-        onError: (err) =>
-            _logWithTime('Error en stream: $err', level: LogLevel.error),
       );
 
-      await _player.start();
-      await _recorder.start();
-
       _isPTTActive = true;
+
       await _syncWakeLock();
       notifyListeners();
-      _logWithTime('PTT iniciado', level: LogLevel.info);
+
+      _logWithTime(
+        'PTT nativo iniciado: micro tablet -> canal izquierdo',
+        level: LogLevel.info,
+      );
     } catch (e, stack) {
-      _logWithTime('Error iniciando PTT: $e\n$stack', level: LogLevel.error);
-      await stopPTT();
+      _isPTTActive = false;
+      notifyListeners();
+
+      await _syncWakeLock();
+
+      _logWithTime(
+        'Error iniciando PTT nativo: $e\n$stack',
+        level: LogLevel.error,
+      );
+
       rethrow;
     }
   }
 
-  /// Escala el volumen de un buffer PCM de 16 bits (little-endian) según [volume].
-  Uint8List _applyVolumeToPCM(Uint8List data, double volume) {
-    if (volume >= 1.0) return data; // Sin cambios
-    if (volume <= 0.0) return Uint8List(data.length); // Silencio
-
-    final result = Uint8List(data.length);
-    // Procesar cada muestra de 16 bits
-    for (int i = 0; i < data.length; i += 2) {
-      // Leer muestra (little-endian)
-      int sample = data[i] | (data[i + 1] << 8);
-      // Convertir a int con signo
-      if (sample >= 32768) sample -= 65536;
-      // Aplicar ganancia
-      sample = (sample * volume).round();
-      // Limitar a rango de 16 bits con signo
-      sample = sample.clamp(-32768, 32767);
-      // Convertir de nuevo a sin signo para empaquetar
-      if (sample < 0) sample += 65536;
-      // Escribir de vuelta
-      result[i] = sample & 0xFF;
-      result[i + 1] = (sample >> 8) & 0xFF;
-    }
-    return result;
-  }
-
   Future<void> stopPTT() async {
     _logWithTime('stopPTT llamado', level: LogLevel.info);
+
     if (!_isPTTActive) return;
+
     _isPTTActive = false;
     notifyListeners();
 
     try {
-      await _recorder.stop();
-      await _audioStreamSubscription?.cancel();
-      _audioStreamSubscription = null;
-      await _player.stop();
+      await _nativePttChannel.invokeMethod('stopPtt');
+
+      await Future.delayed(const Duration(milliseconds: 250));
+
       await _configureSessionForPlayback();
+
+      await _reprimeAfterPTT();
+
       await _syncWakeLock();
-      _logWithTime('PTT detenido', level: LogLevel.info);
+
+      _logWithTime('PTT nativo detenido', level: LogLevel.info);
     } catch (e, stack) {
-      _logWithTime('Error deteniendo PTT: $e\n$stack', level: LogLevel.error);
+      _logWithTime(
+        'Error deteniendo PTT nativo: $e\n$stack',
+        level: LogLevel.error,
+      );
     }
   }
 
-  // ===================== Reproducción de MP3 =====================
+  Future<void> _startPannedAsset({
+    required ap.AudioPlayer player,
+    required String assetPath,
+    required double balance,
+    required double volume,
+  }) async {
+    await _startPannedSource(
+      player: player,
+      assetPath: assetPath,
+      balance: balance,
+      volume: volume,
+    );
+  }
+
+  Future<void> _startPannedDeviceFile({
+    required ap.AudioPlayer player,
+    required String filePath,
+    required double balance,
+    required double volume,
+  }) async {
+    await _startPannedSource(
+      player: player,
+      filePath: filePath,
+      balance: balance,
+      volume: volume,
+    );
+  }
+
+  Future<void> _startPannedSource({
+    required ap.AudioPlayer player,
+    String? assetPath,
+    String? filePath,
+    required double balance,
+    required double volume,
+  }) async {
+    await _waitUntilPrimed();
+    await _configureSessionForPlayback();
+
+    await player.stop();
+
+    if (filePath != null) {
+      await player.setSourceDeviceFile(filePath);
+    } else if (assetPath != null) {
+      await player.setSourceAsset(assetPath);
+    } else {
+      throw ArgumentError('Se necesita assetPath o filePath');
+    }
+
+    await player.setBalance(balance);
+    await player.setVolume(volume);
+    await player.seek(Duration.zero);
+
+    await player.resume();
+
+    await Future.delayed(const Duration(milliseconds: 30));
+    await player.setBalance(balance);
+    await player.setVolume(volume);
+
+    await Future.delayed(const Duration(milliseconds: 120));
+    await player.setBalance(balance);
+    await player.setVolume(volume);
+  }
+
+  Future<void> playLeftCough() async {
+    await playLeftAsset(voiceCoughAsset, logName: 'tos');
+  }
+
+  Future<void> playLeftNausea() async {
+    await playLeftAsset(voiceNauseaAsset, logName: 'nausea');
+  }
+
+  Future<void> playStethoscopeWheezing() async {
+    await playRightAsset(stethoscopeWheezingAsset, logName: 'wheezing');
+  }
+
+  Future<void> playStethoscopeHeart() async {
+    await playRightAsset(stethoscopeHeartAsset, logName: 'heart');
+  }
+
   Future<void> playLeftOnly() async {
-    _logWithTime('▶️ playLeftOnly - inicio', level: LogLevel.info);
-    _leftPlaying = true;
-    await _syncWakeLock();
-    await _leftOnlyPlayer.setBalance(-1.0);
-    await _leftOnlyPlayer.seek(Duration.zero);
-    await _leftOnlyPlayer.resume();
-    _logWithTime('✅ Ruidos vocales reproduciéndose', level: LogLevel.info);
+    await playLeftCough();
   }
 
   Future<void> playRightOnly() async {
-    _logWithTime('▶️ playRightOnly - inicio', level: LogLevel.info);
-    _rightPlaying1 = true;
-    await _syncWakeLock();
-    await _rightPlayer1.setBalance(1.0);
-    await _rightPlayer1.seek(Duration.zero);
-    await _rightPlayer1.resume();
-    _logWithTime('✅ Estetoscopio reproduciéndose', level: LogLevel.info);
+    await playStethoscopeHeart();
+  }
+
+  Future<void> playLeftAsset(String assetPath, {String? logName}) async {
+    _logWithTime('playLeftAsset llamado: ${logName ?? assetPath}',
+        level: LogLevel.info);
+
+    try {
+      if (_isPTTActive) {
+        await stopPTT();
+      }
+
+      await _startPannedAsset(
+        player: _leftPlayer,
+        assetPath: assetPath,
+        balance: -1.0,
+        volume: _leftVolume,
+      );
+
+      _leftPlaying = true;
+      await _syncWakeLock();
+      notifyListeners();
+    } catch (e, stack) {
+      _logWithTime(
+        'Error en playLeftAsset: $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
+  }
+
+  Future<void> playRightAsset(String assetPath, {String? logName}) async {
+    _logWithTime('playRightAsset llamado: ${logName ?? assetPath}',
+        level: LogLevel.info);
+
+    try {
+      if (_isPTTActive) {
+        await stopPTT();
+      }
+
+      await _startPannedAsset(
+        player: _rightPlayer,
+        assetPath: assetPath,
+        balance: 1.0,
+        volume: _rightVolume,
+      );
+
+      _rightPlaying1 = true;
+      _rightPlaying2 = false;
+      await _syncWakeLock();
+      notifyListeners();
+    } catch (e, stack) {
+      _logWithTime(
+        'Error en playRightAsset: $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
+  }
+
+  Future<void> playLeftFile(String filePath, {String? logName}) async {
+    _logWithTime('playLeftFile llamado: ${logName ?? filePath}',
+        level: LogLevel.info);
+
+    try {
+      if (_isPTTActive) {
+        await stopPTT();
+      }
+
+      await _startPannedDeviceFile(
+        player: _leftPlayer,
+        filePath: filePath,
+        balance: -1.0,
+        volume: _leftVolume,
+      );
+
+      _leftPlaying = true;
+      await _syncWakeLock();
+      notifyListeners();
+    } catch (e, stack) {
+      _logWithTime(
+        'Error en playLeftFile: $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
+  }
+
+  Future<void> playRightFile(String filePath, {String? logName}) async {
+    _logWithTime('playRightFile llamado: ${logName ?? filePath}',
+        level: LogLevel.info);
+
+    try {
+      if (_isPTTActive) {
+        await stopPTT();
+      }
+
+      await _startPannedDeviceFile(
+        player: _rightPlayer,
+        filePath: filePath,
+        balance: 1.0,
+        volume: _rightVolume,
+      );
+
+      _rightPlaying1 = true;
+      _rightPlaying2 = false;
+      await _syncWakeLock();
+      notifyListeners();
+    } catch (e, stack) {
+      _logWithTime(
+        'Error en playRightFile: $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
   }
 
   Future<void> playBothOnRight() async {
-    _logWithTime('▶️ playBothOnRight - inicio', level: LogLevel.info);
-    _rightPlaying1 = true;
-    _rightPlaying2 = true;
-    await _syncWakeLock();
-    await _rightPlayer1.setBalance(1.0);
-    await _rightPlayer2.setBalance(1.0);
-    await _rightPlayer1.seek(Duration.zero);
-    await _rightPlayer2.seek(Duration.zero);
-    await _rightPlayer1.resume();
-    await _rightPlayer2.resume();
-    _logWithTime('✅ Ambos sonidos reproduciéndose en derecho',
-        level: LogLevel.info);
+    _logWithTime('playBothOnRight llamado', level: LogLevel.info);
+
+    try {
+      if (_isPTTActive) {
+        await stopPTT();
+      }
+
+      await _waitUntilPrimed();
+      await _configureSessionForPlayback();
+
+      await _rightPlayer.stop();
+      await _rightPlayer2.stop();
+
+      await Future.delayed(const Duration(milliseconds: 50));
+
+      await _rightPlayer.setSourceAsset(stethoscopeHeartAsset);
+      await _rightPlayer2.setSourceAsset(voiceCoughAsset);
+
+      await _rightPlayer.setBalance(1.0);
+      await _rightPlayer2.setBalance(1.0);
+
+      await _rightPlayer.setVolume(_rightVolume);
+      await _rightPlayer2.setVolume(_rightVolume);
+
+      await _rightPlayer.seek(Duration.zero);
+      await _rightPlayer2.seek(Duration.zero);
+
+      await _rightPlayer.resume();
+      await _rightPlayer2.resume();
+
+      await Future.delayed(const Duration(milliseconds: 30));
+
+      await _rightPlayer.setBalance(1.0);
+      await _rightPlayer2.setBalance(1.0);
+      await _rightPlayer.setVolume(_rightVolume);
+      await _rightPlayer2.setVolume(_rightVolume);
+
+      await Future.delayed(const Duration(milliseconds: 120));
+
+      await _rightPlayer.setBalance(1.0);
+      await _rightPlayer2.setBalance(1.0);
+      await _rightPlayer.setVolume(_rightVolume);
+      await _rightPlayer2.setVolume(_rightVolume);
+
+      _rightPlaying1 = true;
+      _rightPlaying2 = true;
+
+      await _syncWakeLock();
+      notifyListeners();
+    } catch (e, stack) {
+      _logWithTime(
+        'Error en playBothOnRight: $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
   }
 
-  // ===================== Detener =====================
   Future<void> stopLeft() async {
-    _logWithTime('⏹️ stopLeft llamado', level: LogLevel.info);
-    await _leftOnlyPlayer.stop();
-    _leftPlaying = false;
-    await _syncWakeLock();
-    _logWithTime('Ruidos vocales detenidos', level: LogLevel.info);
+    try {
+      await _leftPlayer.stop();
+      _leftPlaying = false;
+
+      await _leftPlayer.setBalance(-1.0);
+      await _leftPlayer.setVolume(_leftVolume);
+
+      await _syncWakeLock();
+      notifyListeners();
+    } catch (e, stack) {
+      _logWithTime(
+        'Error en stopLeft: $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
   }
 
   Future<void> stopRight() async {
-    _logWithTime('⏹️ stopRight llamado', level: LogLevel.info);
-    await _rightPlayer1.stop();
-    await _rightPlayer2.stop();
-    _rightPlaying1 = false;
-    _rightPlaying2 = false;
-    await _syncWakeLock();
-    _logWithTime('Estetoscopio detenido', level: LogLevel.info);
+    try {
+      await _rightPlayer.stop();
+      await _rightPlayer2.stop();
+
+      _rightPlaying1 = false;
+      _rightPlaying2 = false;
+
+      await _rightPlayer.setBalance(1.0);
+      await _rightPlayer2.setBalance(1.0);
+      await _rightPlayer.setVolume(_rightVolume);
+      await _rightPlayer2.setVolume(_rightVolume);
+
+      await _syncWakeLock();
+      notifyListeners();
+    } catch (e, stack) {
+      _logWithTime(
+        'Error en stopRight: $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
   }
 
   Future<void> stop() async {
-    _logWithTime('⏹️ stop todo', level: LogLevel.info);
     await stopPTT();
     await stopLeft();
     await stopRight();
-    _logWithTime('Todos los sonidos detenidos', level: LogLevel.info);
   }
 
   @override
   void dispose() {
-    _logWithTime('Disposing PannedAudioService', level: LogLevel.info);
-    _audioStreamSubscription?.cancel();
-    _recorder.dispose();
-    _player.dispose();
-    _leftOnlyPlayer.dispose();
-    _rightPlayer1.dispose();
+    _leftPlayer.dispose();
+    _rightPlayer.dispose();
     _rightPlayer2.dispose();
+
+    try {
+      _recorder.dispose();
+    } catch (_) {}
+
+    try {
+      _player.dispose();
+    } catch (_) {}
+
+    unawaited(_nativePttChannel.invokeMethod('stopPtt'));
+
     WakelockPlus.disable();
+
     super.dispose();
   }
 }

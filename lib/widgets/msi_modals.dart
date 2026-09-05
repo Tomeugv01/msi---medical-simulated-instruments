@@ -211,6 +211,8 @@ class EditPresetModal extends StatefulWidget {
 
 class _EditPresetModalState extends State<EditPresetModal> {
   late TextEditingController _titleController;
+  late TextEditingController _presetIntroController;
+  late TextEditingController _presetNotesController;
   late IconData _selectedIcon;
   late List<String> _selectedInstruments;
   late List<ClinicalEvent> _selectedEvents;
@@ -220,6 +222,9 @@ class _EditPresetModalState extends State<EditPresetModal> {
   void initState() {
     super.initState();
     _titleController = TextEditingController(text: widget.preset?.title ?? '');
+    _presetIntroController =
+        TextEditingController(text: widget.preset?.introduction ?? '');
+    _presetNotesController = TextEditingController(text: widget.preset?.notes ?? '');
     _selectedIcon = widget.preset?.icon ??
         (widget.isClinical ? LucideIcons.clipboardList : LucideIcons.wrench);
     _selectedInstruments =
@@ -228,6 +233,14 @@ class _EditPresetModalState extends State<EditPresetModal> {
         List<ClinicalEvent>.from(widget.preset?.allowedEvents ?? []);
     _selectedMeasurements =
         List<String>.from(widget.preset?.allowedMeasurements ?? []);
+  }
+
+  @override
+  void dispose() {
+    _titleController.dispose();
+    _presetIntroController.dispose();
+    _presetNotesController.dispose();
+    super.dispose();
   }
 
   @override
@@ -272,6 +285,44 @@ class _EditPresetModalState extends State<EditPresetModal> {
                           borderSide: BorderSide.none),
                       contentPadding: const EdgeInsets.symmetric(
                           horizontal: 20, vertical: 20),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _presetIntroController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      labelText: 'Introducción del caso',
+                      labelStyle: TextStyle(
+                          color: msiTheme.primary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold),
+                      filled: true,
+                      fillColor: msiTheme.card,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 18),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _presetNotesController,
+                    maxLines: 3,
+                    decoration: InputDecoration(
+                      labelText: 'Notas del caso',
+                      labelStyle: TextStyle(
+                          color: msiTheme.primary,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold),
+                      filled: true,
+                      fillColor: msiTheme.card,
+                      border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 18),
                     ),
                   ),
                   const SizedBox(height: 32),
@@ -456,6 +507,8 @@ class _EditPresetModalState extends State<EditPresetModal> {
                   isClinical: widget.preset?.isClinical ?? widget.isClinical,
                   allowedEvents: _selectedEvents,
                   allowedMeasurements: _selectedMeasurements,
+                  introduction: _presetIntroController.text,
+                  notes: _presetNotesController.text,
                 );
                 if (widget.preset == null) {
                   state.addPreset(newPreset);
@@ -788,6 +841,8 @@ class NotesBox extends StatefulWidget {
 class _NotesBoxState extends State<NotesBox> {
   late TextEditingController _supController;
   late TextEditingController _stdController;
+  late TextEditingController _introController;
+  late TextEditingController _notesController;
 
   @override
   void initState() {
@@ -795,61 +850,107 @@ class _NotesBoxState extends State<NotesBox> {
     final state = context.read<SimulationState>();
     _supController = TextEditingController(text: state.supervisor);
     _stdController = TextEditingController(text: state.student);
+    _introController = TextEditingController(text: state.introduction);
+    _notesController = TextEditingController(text: state.notes);
   }
 
   @override
   void dispose() {
     _supController.dispose();
     _stdController.dispose();
+    _introController.dispose();
+    _notesController.dispose();
     super.dispose();
+  }
+
+  Widget _buildTrainingField({
+    required MSITheme msiTheme,
+    required TextEditingController controller,
+    required String label,
+    required IconData icon,
+    required ValueChanged<String> onChanged,
+    int maxLines = 1,
+  }) {
+    return TextField(
+      onChanged: onChanged,
+      controller: controller,
+      maxLines: maxLines,
+      decoration: InputDecoration(
+        labelText: label,
+        alignLabelWithHint: maxLines > 1,
+        labelStyle: GoogleFonts.manrope(
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1,
+        ),
+        filled: true,
+        fillColor: msiTheme.card,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: BorderSide.none,
+        ),
+        prefixIcon: Padding(
+          padding: EdgeInsets.only(bottom: maxLines > 1 ? 44 : 0),
+          child: Icon(
+            icon,
+            size: 18,
+            color: msiTheme.primary.withOpacity(0.3),
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<SimulationState>();
     final msiTheme = state.theme;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('CONFIGURACIÓN DE ENTRENAMIENTO',
-            style: GoogleFonts.manrope(
-                fontSize: 10,
-                fontWeight: FontWeight.w900,
-                color: msiTheme.text.withOpacity(0.5),
-                letterSpacing: 1.5)),
-        const SizedBox(height: 16),
-        TextField(
-          onChanged: (v) => state.setSessionInfo(supervisor: v),
-          controller: _supController,
-          decoration: InputDecoration(
-            labelText: 'PROFESOR',
-            labelStyle: GoogleFonts.manrope(
-                fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1),
-            filled: true,
-            fillColor: msiTheme.card,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none),
-            prefixIcon: Icon(LucideIcons.userCheck,
-                size: 18, color: msiTheme.primary.withOpacity(0.3)),
+        Text(
+          'CONFIGURACIÓN DE ENTRENAMIENTO',
+          style: GoogleFonts.manrope(
+            fontSize: 10,
+            fontWeight: FontWeight.w900,
+            color: msiTheme.text.withOpacity(0.5),
+            letterSpacing: 1.5,
           ),
         ),
+        const SizedBox(height: 16),
+        _buildTrainingField(
+          msiTheme: msiTheme,
+          controller: _supController,
+          label: 'PROFESOR',
+          icon: LucideIcons.userCheck,
+          onChanged: (v) => state.setSessionInfo(supervisor: v),
+        ),
         const SizedBox(height: 12),
-        TextField(
-          onChanged: (v) => state.setSessionInfo(student: v),
+        _buildTrainingField(
+          msiTheme: msiTheme,
           controller: _stdController,
-          decoration: InputDecoration(
-            labelText: 'ESTUDIANTE / EQUIPO',
-            labelStyle: GoogleFonts.manrope(
-                fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1),
-            filled: true,
-            fillColor: msiTheme.card,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none),
-            prefixIcon: Icon(LucideIcons.users,
-                size: 18, color: msiTheme.primary.withOpacity(0.3)),
-          ),
+          label: 'ESTUDIANTE / EQUIPO',
+          icon: LucideIcons.users,
+          onChanged: (v) => state.setSessionInfo(student: v),
+        ),
+        const SizedBox(height: 12),
+        _buildTrainingField(
+          msiTheme: msiTheme,
+          controller: _introController,
+          label: 'INTRODUCCIÓN',
+          icon: LucideIcons.fileText,
+          maxLines: 3,
+          onChanged: (v) => state.setSessionInfo(introduction: v),
+        ),
+        const SizedBox(height: 12),
+        _buildTrainingField(
+          msiTheme: msiTheme,
+          controller: _notesController,
+          label: 'NOTAS',
+          icon: LucideIcons.fileText,
+          maxLines: 3,
+          onChanged: (v) => state.setSessionInfo(notes: v),
         ),
       ],
     );

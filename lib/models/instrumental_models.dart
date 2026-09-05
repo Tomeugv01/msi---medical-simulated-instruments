@@ -61,6 +61,8 @@ class InstrumentalPreset {
   bool isClinical;
   List<ClinicalEvent> allowedEvents;
   List<String> allowedMeasurements;
+  String introduction;
+  String notes;
 
   InstrumentalPreset({
     required this.id,
@@ -70,6 +72,8 @@ class InstrumentalPreset {
     this.isClinical = false,
     List<ClinicalEvent>? allowedEvents,
     List<String>? allowedMeasurements,
+    this.introduction = '',
+    this.notes = '',
   })  : allowedEvents = allowedEvents ?? [],
         allowedMeasurements = allowedMeasurements ?? [];
 
@@ -84,6 +88,8 @@ class InstrumentalPreset {
         'isClinical': isClinical,
         'allowedEvents': allowedEvents.map((e) => e.toJson()).toList(),
         'allowedMeasurements': allowedMeasurements,
+        'introduction': introduction,
+        'notes': notes,
       };
 
   factory InstrumentalPreset.fromJson(Map<String, dynamic> json) {
@@ -99,6 +105,8 @@ class InstrumentalPreset {
           }).toList() ??
           [],
       allowedMeasurements: List<String>.from(json['allowedMeasurements'] ?? []),
+      introduction: json['introduction'] ?? '',
+      notes: json['notes'] ?? '',
     );
   }
 }

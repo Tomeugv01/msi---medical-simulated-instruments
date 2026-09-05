@@ -24,8 +24,10 @@ dependencies:
   sound_stream:
     path: plugins/sound_stream
   reorderables: ^0.6.0
-  wakelock_plus: ^1.6.1
-  just_audio: ^0.9.37
+  wakelock_plus: ^1.5.2
+
+  file_picker: ^8.1.7
+  path_provider: ^2.1.0
 
 dev_dependencies:
   flutter_test:
@@ -46,5 +48,12 @@ flutter:
     - assets/logo.png
     - assets/sounds/audio.mp3
     - assets/sounds/audio2.mp3
+    - assets/sounds/tos.mp3
+    - assets/sounds/nausea.mp3
+    - assets/sounds/wheezing.mp3
+    - assets/sounds/heart.mp3
+    - assets/sounds/audio_left.mp3
+    - assets/sounds/audio_right.mp3
+    - assets/sounds/silence_stereo.mp3
     - assets/fonts/roboto_bold.ttf
     - assets/fonts/noto_color_emoji.ttf
