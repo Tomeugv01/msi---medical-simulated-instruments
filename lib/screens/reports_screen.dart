@@ -75,6 +75,18 @@ class ReportsScreen extends StatelessWidget {
                 'Profesor: ${state.supervisor.isEmpty ? 'No especificado' : state.supervisor}'),
             pw.Text(
                 'Estudiante: ${state.student.isEmpty ? 'No especificado' : state.student}'),
+            if (state.currentIntroduction.isNotEmpty) ...[
+              pw.SizedBox(height: 8),
+              pw.Text('Introducción:',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+              pw.Text(state.currentIntroduction),
+            ],
+            if (state.currentNotes.isNotEmpty) ...[
+              pw.SizedBox(height: 8),
+              pw.Text('Notas:',
+                  style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+              pw.Text(state.currentNotes),
+            ],
             pw.Divider(),
             pw.SizedBox(height: 20),
             ...reorderedLogs.map((log) {

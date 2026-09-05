@@ -87,6 +87,42 @@ class _MainAppShellState extends State<MainAppShell> {
 
   void _navigateTo(int index) => setState(() => _currentIndex = index);
 
+  Future<void> _confirmStopSimulation(BuildContext context) async {
+    final state = context.read<SimulationState>();
+
+    final shouldStop = await showDialog<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('¿Finalizar Simulación?'),
+            content: const Text(
+              'Se guardará el registro actual y se detendrá la telemetría.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancelar'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text(
+                  'Finalizar',
+                  style: TextStyle(color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+
+    if (!shouldStop) return;
+
+    await state.stopSimulation();
+
+    if (!mounted) return;
+    _navigateTo(1);
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -186,6 +222,38 @@ class _MainAppShellState extends State<MainAppShell> {
                             color: msiTheme.primary)),
                   ]),
                 ),
+              if (state.isRunning) ...[
+                const SizedBox(width: 8),
+                Tooltip(
+                  message: 'Finalizar simulación',
+                  child: InkWell(
+                    onTap: () => _confirmStopSimulation(context),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEF4444),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFFEF4444).withOpacity(0.25),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(
+                        Icons.stop,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
           actions: [

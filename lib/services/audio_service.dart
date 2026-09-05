@@ -368,12 +368,48 @@ class PannedAudioService extends ChangeNotifier {
     required double balance,
     required double volume,
   }) async {
+    await _startPannedSource(
+      player: player,
+      assetPath: assetPath,
+      balance: balance,
+      volume: volume,
+    );
+  }
+
+  Future<void> _startPannedDeviceFile({
+    required ap.AudioPlayer player,
+    required String filePath,
+    required double balance,
+    required double volume,
+  }) async {
+    await _startPannedSource(
+      player: player,
+      filePath: filePath,
+      balance: balance,
+      volume: volume,
+    );
+  }
+
+  Future<void> _startPannedSource({
+    required ap.AudioPlayer player,
+    String? assetPath,
+    String? filePath,
+    required double balance,
+    required double volume,
+  }) async {
     await _waitUntilPrimed();
     await _configureSessionForPlayback();
 
     await player.stop();
 
-    await player.setSourceAsset(assetPath);
+    if (filePath != null) {
+      await player.setSourceDeviceFile(filePath);
+    } else if (assetPath != null) {
+      await player.setSourceAsset(assetPath);
+    } else {
+      throw ArgumentError('Se necesita assetPath o filePath');
+    }
+
     await player.setBalance(balance);
     await player.setVolume(volume);
     await player.seek(Duration.zero);
@@ -463,6 +499,61 @@ class PannedAudioService extends ChangeNotifier {
     } catch (e, stack) {
       _logWithTime(
         'Error en playRightAsset: $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
+  }
+
+  Future<void> playLeftFile(String filePath, {String? logName}) async {
+    _logWithTime('playLeftFile llamado: ${logName ?? filePath}',
+        level: LogLevel.info);
+
+    try {
+      if (_isPTTActive) {
+        await stopPTT();
+      }
+
+      await _startPannedDeviceFile(
+        player: _leftPlayer,
+        filePath: filePath,
+        balance: -1.0,
+        volume: _leftVolume,
+      );
+
+      _leftPlaying = true;
+      await _syncWakeLock();
+      notifyListeners();
+    } catch (e, stack) {
+      _logWithTime(
+        'Error en playLeftFile: $e\n$stack',
+        level: LogLevel.error,
+      );
+    }
+  }
+
+  Future<void> playRightFile(String filePath, {String? logName}) async {
+    _logWithTime('playRightFile llamado: ${logName ?? filePath}',
+        level: LogLevel.info);
+
+    try {
+      if (_isPTTActive) {
+        await stopPTT();
+      }
+
+      await _startPannedDeviceFile(
+        player: _rightPlayer,
+        filePath: filePath,
+        balance: 1.0,
+        volume: _rightVolume,
+      );
+
+      _rightPlaying1 = true;
+      _rightPlaying2 = false;
+      await _syncWakeLock();
+      notifyListeners();
+    } catch (e, stack) {
+      _logWithTime(
+        'Error en playRightFile: $e\n$stack',
         level: LogLevel.error,
       );
     }

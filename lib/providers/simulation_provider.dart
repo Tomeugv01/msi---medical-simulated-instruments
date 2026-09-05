@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_reactive_ble/flutter_reactive_ble.dart';
 import 'dart:async';
@@ -7,9 +9,45 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:audio_session/audio_session.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/instrumental_models.dart';
 import '../services/audio_service.dart';
 import '../services/telemetry_service.dart';
+
+class CustomAudioSound {
+  final String id;
+  final String label;
+  final String filePath;
+
+  const CustomAudioSound({
+    required this.id,
+    required this.label,
+    required this.filePath,
+  });
+
+  factory CustomAudioSound.fromJson(Map<String, dynamic> json) {
+    return CustomAudioSound(
+      id: json['id']?.toString() ?? '',
+      label: json['label']?.toString() ?? 'Sonido personalizado',
+      filePath: json['filePath']?.toString() ?? '',
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'label': label,
+        'filePath': filePath,
+      };
+
+  CustomAudioSound copyWith({String? label, String? filePath}) {
+    return CustomAudioSound(
+      id: id,
+      label: label ?? this.label,
+      filePath: filePath ?? this.filePath,
+    );
+  }
+}
 
 /// [SimulationState] is the central data hub of the application.
 /// It manages vital signs, Bluetooth connectivity, persistent settings,
@@ -29,6 +67,9 @@ class SimulationState extends ChangeNotifier {
 
   // Audio Module Delegation
   final PannedAudioService _audioService = PannedAudioService();
+
+  final List<CustomAudioSound> _customVoiceSounds = [];
+  final List<CustomAudioSound> _customStethoscopeSounds = [];
 
   // Telemetry Module (Peripheral Mode)
   final TelemetryService _telemetryService = TelemetryService();
@@ -79,7 +120,11 @@ class SimulationState extends ChangeNotifier {
 
   String _supervisor = '';
   String _student = '';
+  String _introduction = '';
   String _notes = '';
+  String _currentIntroduction = '';
+  String _currentNotes = '';
+  bool _nextSimulationUsesPresetInfo = false;
 
   final List<Map<String, String>> _logs = [];
 
@@ -215,6 +260,10 @@ class SimulationState extends ChangeNotifier {
     await _audioService.playLeftNausea();
   }
 
+  Future<void> playCustomVoiceSound(CustomAudioSound sound) async {
+    await _audioService.playLeftFile(sound.filePath, logName: sound.label);
+  }
+
   Future<void> playRight() async {
     await _audioService.playStethoscopeHeart();
   }
@@ -225,6 +274,10 @@ class SimulationState extends ChangeNotifier {
 
   Future<void> playStethoscopeHeart() async {
     await _audioService.playStethoscopeHeart();
+  }
+
+  Future<void> playCustomStethoscopeSound(CustomAudioSound sound) async {
+    await _audioService.playRightFile(sound.filePath, logName: sound.label);
   }
 
   Future<void> playBothRight() async {
@@ -241,6 +294,133 @@ class SimulationState extends ChangeNotifier {
 
   Future<void> stopSound() async {
     await _audioService.stop();
+  }
+
+  List<CustomAudioSound> get customVoiceSounds =>
+      List.unmodifiable(_customVoiceSounds);
+  List<CustomAudioSound> get customStethoscopeSounds =>
+      List.unmodifiable(_customStethoscopeSounds);
+
+  Future<void> importCustomSound({required bool isVoice}) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg'],
+      allowMultiple: false,
+    );
+
+    if (result == null || result.files.isEmpty) return;
+
+    final picked = result.files.single;
+    final sourcePath = picked.path;
+
+    if (sourcePath == null || sourcePath.isEmpty) return;
+
+    try {
+      final appDir = await getApplicationDocumentsDirectory();
+      final soundsDir = Directory(
+        '${appDir.path}/custom_sounds/${isVoice ? 'voice' : 'stethoscope'}',
+      );
+
+      if (!await soundsDir.exists()) {
+        await soundsDir.create(recursive: true);
+      }
+
+      final originalName = picked.name.isNotEmpty
+          ? picked.name
+          : sourcePath.split(Platform.pathSeparator).last;
+      final extension = _extensionFromName(originalName);
+      final safeBaseName = _safeFileName(_nameWithoutExtension(originalName));
+      final id = DateTime.now().microsecondsSinceEpoch.toString();
+      final copiedPath = '${soundsDir.path}/${id}_$safeBaseName$extension';
+
+      await File(sourcePath).copy(copiedPath);
+
+      final sound = CustomAudioSound(
+        id: id,
+        label: _prettySoundName(_nameWithoutExtension(originalName)),
+        filePath: copiedPath,
+      );
+
+      if (isVoice) {
+        _customVoiceSounds.add(sound);
+      } else {
+        _customStethoscopeSounds.add(sound);
+      }
+
+      await _saveSettings();
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error importando sonido personalizado: $e');
+    }
+  }
+
+  Future<void> renameCustomSound({
+    required bool isVoice,
+    required String id,
+    required String label,
+  }) async {
+    final cleanLabel = label.trim();
+    if (cleanLabel.isEmpty) return;
+
+    final list = isVoice ? _customVoiceSounds : _customStethoscopeSounds;
+    final index = list.indexWhere((sound) => sound.id == id);
+
+    if (index == -1) return;
+
+    list[index] = list[index].copyWith(label: cleanLabel);
+
+    await _saveSettings();
+    notifyListeners();
+  }
+
+  Future<void> deleteCustomSound({
+    required bool isVoice,
+    required String id,
+  }) async {
+    final list = isVoice ? _customVoiceSounds : _customStethoscopeSounds;
+    final index = list.indexWhere((sound) => sound.id == id);
+
+    if (index == -1) return;
+
+    final removed = list.removeAt(index);
+
+    try {
+      final file = File(removed.filePath);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {}
+
+    await _saveSettings();
+    notifyListeners();
+  }
+
+  String _extensionFromName(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot == -1 || dot == name.length - 1) return '.mp3';
+    return name.substring(dot).toLowerCase();
+  }
+
+  String _nameWithoutExtension(String name) {
+    final dot = name.lastIndexOf('.');
+    if (dot == -1) return name;
+    return name.substring(0, dot);
+  }
+
+  String _safeFileName(String name) {
+    final safe = name
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9_-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+
+    return safe.isEmpty ? 'sonido' : safe;
+  }
+
+  String _prettySoundName(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return 'Sonido personalizado';
+    return trimmed;
   }
 
   List<InstrumentalPreset> get instrumentalPresets =>
@@ -355,6 +535,10 @@ class SimulationState extends ChangeNotifier {
       _completedMeasurements[m] = false;
     }
 
+    _currentIntroduction = preset.introduction;
+    _currentNotes = preset.notes;
+    _nextSimulationUsesPresetInfo = true;
+
     // Ensure telemetry is stopped before starting a new simulation/preset
     try {
       _telemetryService.stop();
@@ -450,9 +634,17 @@ class SimulationState extends ChangeNotifier {
       final prefs = await SharedPreferences.getInstance();
       _supervisor = prefs.getString('supervisor') ?? '';
       _student = prefs.getString('student') ?? '';
+      _introduction = prefs.getString('introduction') ?? '';
       _notes = prefs.getString('notes') ?? '';
       _themeIndex = prefs.getInt('themeIndex') ?? 0;
       _monitorThemeDark = prefs.getBool('monitorThemeDark') ?? true;
+
+      _customVoiceSounds
+        ..clear()
+        ..addAll(_loadCustomSoundsFromPrefs(prefs, 'customVoiceSounds'));
+      _customStethoscopeSounds
+        ..clear()
+        ..addAll(_loadCustomSoundsFromPrefs(prefs, 'customStethoscopeSounds'));
 
       final instrumentsJson = prefs.getString('instruments');
       if (instrumentsJson != null) {
@@ -565,14 +757,46 @@ class SimulationState extends ChangeNotifier {
     }
   }
 
+  List<CustomAudioSound> _loadCustomSoundsFromPrefs(
+    SharedPreferences prefs,
+    String key,
+  ) {
+    final raw = prefs.getString(key);
+    if (raw == null || raw.isEmpty) return [];
+
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return [];
+
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(CustomAudioSound.fromJson)
+          .where((sound) => sound.id.isNotEmpty && sound.filePath.isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint('Error cargando sonidos personalizados ($key): $e');
+      return [];
+    }
+  }
+
   Future<void> _saveSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('supervisor', _supervisor);
       await prefs.setString('student', _student);
+      await prefs.setString('introduction', _introduction);
       await prefs.setString('notes', _notes);
       await prefs.setInt('themeIndex', _themeIndex);
       await prefs.setBool('monitorThemeDark', _monitorThemeDark);
+      await prefs.setString(
+        'customVoiceSounds',
+        jsonEncode(_customVoiceSounds.map((sound) => sound.toJson()).toList()),
+      );
+      await prefs.setString(
+        'customStethoscopeSounds',
+        jsonEncode(
+            _customStethoscopeSounds.map((sound) => sound.toJson()).toList()),
+      );
 
       final instrumentsData = _instruments
           .map((i) => ({
@@ -615,7 +839,10 @@ class SimulationState extends ChangeNotifier {
 
   String get supervisor => _supervisor;
   String get student => _student;
+  String get introduction => _introduction;
   String get notes => _notes;
+  String get currentIntroduction => _currentIntroduction;
+  String get currentNotes => _currentNotes;
 
   List<DiscoveredDevice> get devices => _devices;
   bool get isScanning => _isScanning;
@@ -739,9 +966,15 @@ class SimulationState extends ChangeNotifier {
     }
   }
 
-  void setSessionInfo({String? supervisor, String? student, String? notes}) {
+  void setSessionInfo({
+    String? supervisor,
+    String? student,
+    String? introduction,
+    String? notes,
+  }) {
     if (supervisor != null) _supervisor = supervisor;
     if (student != null) _student = student;
+    if (introduction != null) _introduction = introduction;
     if (notes != null) _notes = notes;
     _saveSettings();
     notifyListeners();
@@ -802,12 +1035,22 @@ class SimulationState extends ChangeNotifier {
     _pendingTransmissions.clear();
     _elapsed = Duration.zero;
     _logs.clear();
+
+    if (!_nextSimulationUsesPresetInfo) {
+      _currentIntroduction = _introduction;
+      _currentNotes = _notes;
+    }
+    _nextSimulationUsesPresetInfo = false;
+
     _addLog("Simulación Iniciada",
         "Sistema inicializado y flujo de telemetría establecido.");
 
     if (_supervisor.isNotEmpty) _addLog("Profesor Asignado", _supervisor);
     if (_student.isNotEmpty) _addLog("Estudiante Asignado", _student);
-    if (_notes.isNotEmpty) _addLog("Notas de la Sesión", _notes);
+    if (_currentIntroduction.isNotEmpty) {
+      _addLog("Introducción de la Sesión", _currentIntroduction);
+    }
+    if (_currentNotes.isNotEmpty) _addLog("Notas de la Sesión", _currentNotes);
 
     _lastHr = _hr;
     _lastSpo2 = _spo2;
@@ -1016,6 +1259,9 @@ class SimulationState extends ChangeNotifier {
 
     _themeIndex = 0;
     _hubColumns = 1;
+    _currentIntroduction = '';
+    _currentNotes = '';
+    _nextSimulationUsesPresetInfo = false;
     _collapsedInstruments.clear();
     _saveSettings();
     notifyListeners();
